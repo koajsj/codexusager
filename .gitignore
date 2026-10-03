@@ -1,0 +1,13 @@
+.build/
+build/
+.swiftpm/
+.DS_Store
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# Local Xcode state and credentials
+xcuserdata/
+.env
+.env.*
+*.p12
+*.mobileprovision

@@ -243,6 +243,14 @@ public struct ModelSummary: Sendable, Identifiable {
     public var estimatedCost: Double?
 }
 
+public struct HomeSummary: Sendable {
+    public var mainProject: String?
+    public var mainModel: String?
+    public var modelProvider: ProviderID?
+    public var lastActivity: Date?
+    public init() {}
+}
+
 public struct AnalyticsSnapshot: Sendable {
     public var tokens = TokenValues()
     public var recordCount = 0
@@ -259,6 +267,7 @@ public struct AnalyticsSnapshot: Sendable {
     public var availableModels: [String] = []
     public var today = TokenValues()
     public var todayByProvider: [ProviderID: Int] = [:]
+    public var home = HomeSummary()
     public var health: [SourceHealth] = []
     public var adjustments: [UsageAdjustment] = []
     public var manual: [ManualUsage] = []

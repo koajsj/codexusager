@@ -13,3 +13,7 @@ The optional Claude status-line helper receives the documented JSON over stdin, 
 The app has no remote update, crash-reporting or analytics network integration. User-facing error states use fixed labels; raw provider responses and session bodies are never written to logs.
 
 Opt-in quota alerts use the local macOS UserNotifications framework. They include provider, window label, remaining percentage and reset countdown only; no credential, prompt or project path is placed in a notification.
+
+Local JSON backups use a versioned allowlist of app preferences, project mappings, adjustments, manual usage, quota history and user-entered model prices. They do not copy UserDefaults wholesale, provider configuration, account profiles, live quotas, credentials or raw session files. Backups contain project paths and user-entered reasons/notes needed for migration; keep these files private. Files are written atomically with owner-only permissions. Restore validates the format and values, shows a preview and requires confirmation before a single database merge. Existing record IDs and mappings are preserved; restoring app preferences is a separate choice. Raw usage is re-indexed from local provider files on the destination Mac. An adjustment applies only when the target record and original numeric values match.
+
+Welcome completion and source synchronization/scan timestamps are stored locally. The Home summary is deterministic aggregation of existing statistics and does not call an AI model.

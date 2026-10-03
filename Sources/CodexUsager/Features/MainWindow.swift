@@ -74,7 +74,7 @@ struct MainWindow: View {
                         StatusBadge(health: model.overallHealth)
                     }
                     ToolbarItem(placement: .primaryAction) {
-                        Button { model.refreshAll(); model.importSources() } label: {
+                        Button { model.refreshData() } label: {
                             Image(systemName: "arrow.clockwise")
                         }
                         .help("刷新数据")
@@ -120,6 +120,9 @@ struct MainWindow: View {
         .onAppear {
             model.openMainWindow = { openWindow(id: "main") }
             model.start()
+        }
+        .sheet(isPresented: Binding(get: { !model.welcomeCompleted }, set: { _ in })) {
+            WelcomeView(model: model)
         }
         .onChange(of: sessionSelection) { _, id in
             model.loadSession(model.analytics.sessions.first(where: { $0.id == id }))

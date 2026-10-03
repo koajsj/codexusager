@@ -3,6 +3,7 @@ import UsageCore
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    @State private var showWelcome = false
     var body: some View {
         TabView {
             Form {
@@ -14,6 +15,13 @@ struct SettingsView: View {
                 Toggle("自动刷新额度与本地用量", isOn: $model.refreshAutomatically)
                 Text("额度按来源返回的数据展示，套餐名称不会决定额度。")
                     .font(.caption).foregroundStyle(.secondary)
+                Section("欢迎与连接状态") {
+                    LabeledContent("首次引导", value: model.welcomeCompleted ? "已完成" : "尚未完成")
+                    ForEach(ProviderID.allCases, id: \.self) { provider in
+                        LabeledContent(provider.title, value: model.sourceConnectionHealth(provider).localizedLabel)
+                    }
+                    Button("查看欢迎说明") { showWelcome = true }
+                }
                 Section("额度提醒") {
                     Toggle("Codex 低于 25%", isOn: $model.notifyCodex25)
                     Toggle("Codex 低于 10%", isOn: $model.notifyCodex10)
@@ -56,8 +64,10 @@ struct SettingsView: View {
                     LabeledContent("最近索引", value: last.formatted(date: .abbreviated, time: .shortened))
                 }
                 LabeledContent("记录", value: model.analytics.recordCount.formatted())
-                Button("重新扫描本地会话") { model.importSources() }
-                    .disabled(model.isImporting)
+                Button("刷新额度与本地会话") { model.refreshData() }
+                    .disabled(model.isImporting || model.isRefreshing)
+                if let backup = model.backupModel { BackupControls(model: backup) }
+                else { Text("本地数据库就绪后可备份与恢复。").font(.caption).foregroundStyle(.secondary) }
                 if let error = model.storageError { Text(error).foregroundStyle(.orange) }
                 if let error = model.widgetError { Text(error).foregroundStyle(.orange) }
             }
@@ -75,5 +85,6 @@ struct SettingsView: View {
             .tabItem { Label("隐私", systemImage: "hand.raised") }
         }
         .frame(width: 510, height: 390)
+        .sheet(isPresented: $showWelcome) { WelcomeView(model: model) }
     }
 }

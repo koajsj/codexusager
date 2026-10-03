@@ -2,6 +2,13 @@
 
 本文件描述正式发布流程。当前尚未完成构建、签名、公证、DMG 制作或安装验证；完成下列门槛后才能发布正式产物。
 
+## 当前发布门槛（2026-10-03）
+
+- `main` 工作区在归档前干净，`origin` 指向 `https://github.com/koajsj/codexusager.git`；Xcode 工程的 App、Widget 和 ClaudeQuotaBridge 均配置为 1.0.0（构建号 1）。
+- 使用 `CodexUsager` Scheme、Release 配置及 `generic/platform=macOS` 执行归档，Xcode 返回 65：App 与 Widget 的 App Group entitlement 要求开发证书。本机钥匙串没有有效代码签名身份，工程也未配置开发团队；归档未生成。
+- 先配置开发团队、有效签名证书、App 与 Widget 共用的 App Group 和所需 Provisioning Profile，再重新归档；直接分发的 App 与 DMG 还须使用 Developer ID Application 身份签名。不得关闭签名或移除 App Group 来制作发布包。
+- 归档、DMG、公证和安装结构检查均未完成。GitHub Release 正文草稿见 [GITHUB_RELEASE_1.0.0.md](GITHUB_RELEASE_1.0.0.md)；通过下列门槛后再使用。
+
 ## 构建与签名
 
 1. 使用 `CodexUsager.xcodeproj` 的 Release 配置归档 App、Widget 和 ClaudeQuotaBridge。`Scripts/package_app.sh` 的 SwiftPM 单独打包产物没有 Widget，不能作为完整 DMG 来源。

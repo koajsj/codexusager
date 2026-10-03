@@ -23,6 +23,8 @@ struct AnalyticsEngine {
     private var providerTokens: [ProviderID: Int] = [:]
     private var providerSessions: [ProviderID: Set<String>] = [:]
     private var availableModels: Set<String> = []
+    private var todayProjects: [String: (name: String, tokens: Int)] = [:]
+    private var todayModels: [String: (provider: ProviderID, name: String, tokens: Int)] = [:]
 
     init(query: UsageQuery, now: Date, rules: [ProjectRule], adjustments: [UsageAdjustment], prices: [ModelPrice]) {
         self.query = query; self.now = now; calendar = .current
@@ -45,11 +47,19 @@ struct AnalyticsEngine {
     }
     func entry(_ record: UsageRecord) -> UsageEntry {
         let p = project(record.projectID)
-        let adjustment = adjustments[record.id]
+        let adjustment = matchingAdjustment(record)
         return UsageEntry(id: record.id, provider: record.provider, timestamp: record.timestamp,
             sessionID: record.sessionID, project: p.key, projectName: p.name, model: record.model,
             original: record.tokens, final: record.tokens.applying(adjustment?.replacement ?? TokenValues(), provider: record.provider),
             adjustment: adjustment, isManual: false, note: adjustment?.note ?? "")
+    }
+    private func matchingAdjustment(_ record: UsageRecord) -> UsageAdjustment? {
+        guard let value = adjustments[record.id], value.original == record.tokens,
+              value.provider == nil || value.provider == record.provider else { return nil }
+        let final = record.tokens.applying(value.replacement, provider: record.provider)
+        guard final.total != nil else { return nil }
+        do { try final.validate(provider: record.provider); return value }
+        catch { return nil }
     }
     func entry(_ record: ManualUsage) -> UsageEntry {
         let p = project(record.project)
@@ -76,9 +86,19 @@ struct AnalyticsEngine {
         let day = calendar.startOfDay(for: entry.timestamp)
         let sessionKey = "\(entry.provider.rawValue):\(entry.sessionID)"
         if !p.ignored, entry.timestamp <= now {
+            result.home.lastActivity = max(result.home.lastActivity ?? entry.timestamp, entry.timestamp)
             if day == calendar.startOfDay(for: now) {
                 result.today.accumulate(entry.final)
                 result.todayByProvider[entry.provider] = SafeCount.add(result.todayByProvider[entry.provider] ?? 0, total)
+                if let knownTotal = entry.final.total, knownTotal > 0 {
+                    if p.key != "unknown" {
+                        todayProjects[p.key] = (p.name, SafeCount.add(todayProjects[p.key]?.tokens ?? 0, knownTotal))
+                    }
+                    if let name = entry.model, !name.isEmpty, name != "unknown" {
+                        let key = "\(entry.provider.rawValue):\(name)"
+                        todayModels[key] = (entry.provider, name, SafeCount.add(todayModels[key]?.tokens ?? 0, knownTotal))
+                    }
+                }
             }
             if entry.timestamp >= now.addingTimeInterval(-24 * 3600), let hour = calendar.dateInterval(of: .hour, for: entry.timestamp)?.start {
                 hours[hour] = SafeCount.add(hours[hour] ?? 0, total)
@@ -135,6 +155,14 @@ struct AnalyticsEngine {
         modelDays[modelKey] = modelDay
     }
     mutating func finish() -> AnalyticsSnapshot {
+        result.home.mainProject = todayProjects.sorted {
+            $0.value.tokens == $1.value.tokens ? $0.key < $1.key : $0.value.tokens > $1.value.tokens
+        }.first?.value.name
+        if let model = todayModels.sorted(by: {
+            $0.value.tokens == $1.value.tokens ? $0.key < $1.key : $0.value.tokens > $1.value.tokens
+        }).first?.value {
+            result.home.mainModel = model.name; result.home.modelProvider = model.provider
+        }
         result.sessions = sessions.values.sorted { $0.lastSeen > $1.lastSeen }
         result.projects = projectRows.values.map { row in
             var row = row; row.sessionCount = projectSessions[row.id]?.count ?? 0

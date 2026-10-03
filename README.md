@@ -17,6 +17,7 @@ SwiftPM 的 `UsageCore` 是数据层源代码；`Scripts/package_app.sh` 仍可�
 
 ## 功能
 
+- 首次启动：单页欢迎说明展示本机连接状态、数据来源和隐私原则；完成状态保存在本机，设置中可再次查看说明。
 - Codex：复用本机 Codex CLI/App Server 已有登录，读取 `account/read` 与 `account/rateLimits/read`，监听 `account/rateLimits/updated`，并在断线、重置到期或手动刷新时重新读取。套餐与额度分别处理。
 - Claude Code：通过本机 `claude auth status` 检查登录。可在「数据来源」复制 status-line 配置；桥接只写入额度计数和账户标识摘要。未配置或字段缺失时显示额度不可用，Session/Token 统计继续工作。
 - 本地历史：分块读取 `~/.codex/sessions`、`~/.codex/archived_sessions` 和 `~/.claude/projects` 下 JSONL 的统计事件。记录文件身份和偏移以增量导入，使用稳定响应 ID 或指纹去重。
@@ -24,6 +25,8 @@ SwiftPM 的 `UsageCore` 是数据层源代码；`Scripts/package_app.sh` 仍可�
 - 额度历史：按账号与真实额度窗口保存最近 90 天的采样，概览页显示 7/30 天趋势。速度分析只用同一重置周期的额度变化线性计算预计剩余量；同期 Token 仅作参考，不换算成固定额度。
 - 本地提醒：设置中可选择 Codex 25%/10%/重置及 Claude 25% 提醒。主 App 收到新的有效额度后通过 macOS UserNotifications 发送，需用户授权；App 退出后不做后台监测。
 - 人工数据：修正值独立保存为 `UsageAdjustment`；手动补录明确标记。CSV / JSON 导出使用统计字段白名单，默认匿名化绝对项目路径。
+- 备份与恢复：设置的「数据」页可导出本地 JSON 备份，包含应用偏好、项目映射、人工修正、手动记录、90 天内额度历史和自定义模型单价。恢复先校验并预览，确认后合并；当前同 ID 记录优先保留，应用偏好须单独选择恢复。原始会话、当前额度、账户和登录状态不包含在备份中。
+- 数据来源中心分别展示成功同步、额度更新和本地扫描时间；概览小总结显示今日主要项目、模型、额度状态和最近活动，均来自统计数据。
 - 存储：标准化统计、账户摘要、额度快照、游标、来源健康和人工记录保存在 `~/Library/Application Support/CodexUsager/usage.store`。Widget 只读取 App Group 中经过筛选的额度快照。
 
 环境变量 `CODEX_HOME` 和 `CLAUDE_CONFIG_DIR` 会改变本地会话根目录；Codex App Server 同时遵循 `CODEX_HOME`。如果命令行工具未被识别，请确保它位于用户 `PATH`、`~/.local/bin`、Homebrew 路径或 NVM Node bin 路径。

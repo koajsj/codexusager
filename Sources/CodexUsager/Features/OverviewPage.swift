@@ -32,6 +32,8 @@ struct OverviewPage: View {
                     }
                     Text("缓存与推理可能属于输入或输出的子集，总计遵循各来源语义。")
                         .font(.caption2).foregroundStyle(.secondary)
+                    Divider()
+                    HomeSummaryView(model: model)
                 }
                 DashboardGroup("过去 24 小时") {
                     if model.hasIndexed, model.analytics.today.total != nil || model.analytics.past24Hours.contains(where: { $0.tokens > 0 }) {
@@ -82,6 +84,37 @@ struct OverviewPage: View {
             QuotaInsights(model: model)
             }
         }
+    }
+}
+
+private struct HomeSummaryView: View {
+    let model: AppModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            LabeledContent("主要项目") {
+                Text(model.hasIndexed ? model.analytics.home.mainProject ?? "暂无项目统计" : "等待索引")
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            LabeledContent("主要模型") {
+                Text(mainModelLabel)
+                    .lineLimit(1).truncationMode(.middle)
+            }
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                LabeledContent("额度状态", value: model.homeQuotaStatus(at: context.date))
+            }
+            LabeledContent("最近活动") {
+                if model.hasIndexed, let date = model.analytics.home.lastActivity {
+                    Text(date, format: .dateTime.month().day().hour().minute()).monospacedDigit()
+                } else { Text(model.hasIndexed ? "暂无活动" : "等待索引") }
+            }
+            Text("项目与模型按今日 Token 排名；最近活动来自已索引记录。")
+                .font(.caption2).foregroundStyle(.tertiary)
+        }.font(.caption)
+    }
+    private var mainModelLabel: String {
+        guard model.hasIndexed else { return "等待索引" }
+        guard let name = model.analytics.home.mainModel else { return "暂无模型统计" }
+        return model.analytics.home.modelProvider.map { "\($0.title) · \(name)" } ?? name
     }
 }
 

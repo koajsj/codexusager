@@ -31,7 +31,10 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
         entry(for: configuration)
     }
     func timeline(for configuration: QuotaConfiguration, in context: Context) async -> Timeline<QuotaEntry> {
-        Timeline(entries: [entry(for: configuration)], policy: .after(Date().addingTimeInterval(5 * 60)))
+        let current = entry(for: configuration)
+        let nextReset = current.provider?.windows.compactMap(\.reset).filter { $0 > current.date }.min()
+        let refresh = min(current.date.addingTimeInterval(5 * 60), nextReset?.addingTimeInterval(1) ?? .distantFuture)
+        return Timeline(entries: [current], policy: .after(refresh))
     }
     private func entry(for configuration: QuotaConfiguration) -> QuotaEntry {
         let now = Date()
@@ -65,9 +68,12 @@ struct QuotaWidgetView: View {
                 Text(entry.provider?.id == "claude" || (entry.provider == nil && entry.requested == .claude) ? "Claude" : "Codex")
                     .font(.headline)
                 Spacer(minLength: 2)
-                if entry.provider?.stale == true { Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange) }
+                if entry.provider?.stale == true {
+                    Text("已过期").font(.caption2).foregroundStyle(.orange)
+                }
             }
-            Text(entry.provider?.plan ?? "套餐未知").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(entry.provider?.plan ?? "套餐未知").font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
             if rows.isEmpty {
                 Spacer(minLength: 2)
                 Label("额度不可用", systemImage: "gauge").font(.caption).foregroundStyle(.secondary)
@@ -76,7 +82,7 @@ struct QuotaWidgetView: View {
                 ForEach(rows) { quota in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text(name(quota)).font(.caption)
+                            Text(name(quota)).font(.caption).lineLimit(1).minimumScaleFactor(0.8)
                             Spacer()
                             Text(quota.remaining / 100, format: .percent.precision(.fractionLength(0)))
                                 .font(.caption.weight(.semibold)).monospacedDigit()

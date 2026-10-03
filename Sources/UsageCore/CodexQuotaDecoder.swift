@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 public enum CodexQuotaDecoder {
     public static func decode(_ data: Data, fetchedAt: Date) throws -> QuotaSnapshot {
@@ -14,14 +15,21 @@ public enum CodexQuotaDecoder {
         for (key, snapshot) in snapshots {
             let limitID = (snapshot["limitId"] as? String) ?? key
             for field in ["primary", "secondary"] {
-                guard let raw = snapshot[field] as? [String: Any], let used = (raw["usedPercent"] as? NSNumber)?.doubleValue, used.isFinite else { continue }
-                let rawDuration = (raw["windowDurationMins"] as? NSNumber).flatMap { Int($0.stringValue) }
+                guard let raw = snapshot[field] as? [String: Any],
+                      let number = raw["usedPercent"] as? NSNumber,
+                      CFGetTypeID(number) != CFBooleanGetTypeID() else { continue }
+                let used = number.doubleValue
+                guard used.isFinite, (0...100).contains(used) else { continue }
+                let rawDuration = (raw["windowDurationMins"] as? NSNumber).flatMap {
+                    CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : Int($0.stringValue)
+                }
                 let duration = rawDuration.flatMap { $0 > 0 ? $0 : nil }
                 windows.append(QuotaWindow(
                     limitID: limitID, slot: field, limitName: snapshot["limitName"] as? String,
-                    durationMinutes: duration, usedPercent: max(0, used),
-                    remainingPercent: min(100, max(0, 100 - used)),
+                    durationMinutes: duration, usedPercent: used,
+                    remainingPercent: 100 - used,
                     resetsAt: (raw["resetsAt"] as? NSNumber).flatMap {
+                        guard CFGetTypeID($0) != CFBooleanGetTypeID() else { return nil }
                         let seconds = $0.doubleValue
                         return seconds.isFinite && (0...32_503_680_000).contains(seconds) ? Date(timeIntervalSince1970: seconds) : nil
                     },

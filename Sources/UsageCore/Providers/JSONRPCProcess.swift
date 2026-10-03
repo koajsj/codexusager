@@ -35,12 +35,12 @@ public actor JSONRPCProcess {
         let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = FileHandle.nullDevice
         let stream = AsyncStream<Data>.makeStream()
+        try process.run()
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty { handle.readabilityHandler = nil; stream.continuation.finish() }
             else { stream.continuation.yield(data) }
         }
-        try process.run()
         self.process = process; input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading
         buffer.removeAll(); generation = UUID()
         let currentGeneration = generation
@@ -49,13 +49,13 @@ public actor JSONRPCProcess {
             await self?.didDisconnect(generation: currentGeneration)
         }
         do {
-            _ = try await request("initialize", parameters: Data(#"{"clientInfo":{"name":"codexusager","title":"CodexUsager","version":"0.1.0"}}"#.utf8))
+            _ = try await request("initialize", parameters: Data(#"{"clientInfo":{"name":"codexusager","title":"CodexUsager","version":"1.0.0"}}"#.utf8))
             try send(["method": "initialized"])
         } catch { stop(); throw error }
     }
 
     public func request(_ method: String, parameters: Data? = nil, timeout: Duration = .seconds(15)) async throws -> Data {
-        guard process?.isRunning == true else { throw ProviderError.disconnected }
+        guard process?.isRunning == true, let input else { throw ProviderError.disconnected }
         try Task.checkCancellation()
         let id = nextID; nextID += 1
         var message: [String: Any] = ["id": id, "method": method]
@@ -68,7 +68,7 @@ public actor JSONRPCProcess {
                     do { try await Task.sleep(for: timeout) } catch { return }
                     await self?.expire(id)
                 }
-                do { try input?.write(contentsOf: bytes) }
+                do { try input.write(contentsOf: bytes) }
                 catch { finish(id, result: .failure(ProviderError.disconnected)) }
             }
         } onCancel: { Task { await self.cancel(id) } }
@@ -76,7 +76,8 @@ public actor JSONRPCProcess {
 
     private func send(_ object: [String: Any]) throws {
         let data = try JSONSerialization.data(withJSONObject: object) + Data([10])
-        try input?.write(contentsOf: data)
+        guard let input else { throw ProviderError.disconnected }
+        try input.write(contentsOf: data)
     }
 
     private func receive(_ bytes: Data, generation: UUID) {

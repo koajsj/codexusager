@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import CoreFoundation
 
 public enum UsageLineDecoder {
     public static func decode(_ line: String, provider: ProviderID, sessionID: String, sourceFile: String) -> UsageRecord? {
@@ -23,7 +24,9 @@ public enum UsageLineDecoder {
                 guard let info = p["info"] as? [String: Any], let last = info["last_token_usage"] as? [String: Any] else { return nil }
                 usage = last
                 if let cumulative = info["total_token_usage"] as? [String: Any] {
-                    sourceID = "cumulative:" + ["input_tokens", "output_tokens", "cached_input_tokens", "total_tokens"].map { String((cumulative[$0] as? NSNumber)?.intValue ?? 0) }.joined(separator: ":")
+                    sourceID = "cumulative:" + ["input_tokens", "output_tokens", "cached_input_tokens", "total_tokens"].map {
+                        (cumulative[$0] as? NSNumber)?.stringValue ?? "missing"
+                    }.joined(separator: ":")
                 }
                 eventType = "token_count"
             } else if kind == "token_usage_record" {
@@ -40,7 +43,8 @@ public enum UsageLineDecoder {
             model = message["model"] as? String
         }
         func parsedCount(_ key: String) -> Int? {
-            guard let number = usage[key] as? NSNumber else { return nil }
+            guard let number = usage[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
             guard let value = Int(number.stringValue), value >= 0 else { return nil }
             return value
         }
@@ -91,6 +95,10 @@ public enum UsageDeduplicator {
             if record.eventType == "token_usage_record" { return true }
             if old.eventType == "token_usage_record" { return false }
         }
-        return (record.outputTokens, record.totalTokens, record.timestamp) >= (old.outputTokens, old.totalTokens, old.timestamp)
+        let rank = (record.outputTokens, record.totalTokens, record.timestamp)
+        let oldRank = (old.outputTokens, old.totalTokens, old.timestamp)
+        if rank != oldRank { return rank > oldRank }
+        if record.sourceFile != old.sourceFile { return record.sourceFile < old.sourceFile }
+        return record.fingerprint < old.fingerprint
     }
 }

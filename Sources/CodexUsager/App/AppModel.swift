@@ -33,6 +33,10 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     var storageError: String?
     var operationError: String?
     var widgetError: String?
+    var notificationError: String?
+    var quotaHistory: [ProviderID: [QuotaHistoryPoint]] = [:]
+    var pace: [String: PaceResult] = [:]
+    var sourceSummaries: [ProviderID: SourceCenterSummary] = [:]
     var lastRefresh: Date?
     var lastImport: Date?
     var menuSource = MenuSource(rawValue: UserDefaults.standard.string(forKey: "menuSource") ?? "codex") ?? .codex {
@@ -53,9 +57,22 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     var appearance = UserDefaults.standard.string(forKey: "appearance") ?? "system" {
         didSet { UserDefaults.standard.set(appearance, forKey: "appearance") }
     }
+    var notifyCodex25 = UserDefaults.standard.bool(forKey: "notifyCodex25") {
+        didSet { notificationChanged("notifyCodex25", enabled: notifyCodex25) }
+    }
+    var notifyCodex10 = UserDefaults.standard.bool(forKey: "notifyCodex10") {
+        didSet { notificationChanged("notifyCodex10", enabled: notifyCodex10) }
+    }
+    var notifyCodexReset = UserDefaults.standard.bool(forKey: "notifyCodexReset") {
+        didSet { notificationChanged("notifyCodexReset", enabled: notifyCodexReset) }
+    }
+    var notifyClaude25 = UserDefaults.standard.bool(forKey: "notifyClaude25") {
+        didSet { notificationChanged("notifyClaude25", enabled: notifyClaude25) }
+    }
     var openMainWindow: () -> Void = {}
     private let codex = CodexProvider()
     private let claude = ClaudeProvider()
+    private let quotaNotifier = QuotaNotifier()
     private var repository: UsageRepository?
     private var statusBar: StatusBarController?
     private var refreshTask: Task<Void, Never>?
@@ -71,6 +88,7 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     private var pendingRefresh = false
     private var accountGeneration = 0
     private var analyticsGeneration = 0
+    private var sourceSummaryGeneration = 0
     private var detailGeneration = 0
     private var selectedSession: SessionSummary?
 
@@ -80,11 +98,33 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     }
     var selectedStatus: ProviderStatus { status(selectedProvider) }
     var selectedQuota: QuotaState { quota(selectedProvider) }
+    var overallHealth: ConnectionHealth {
+        if isRefreshing { return .syncing }
+        let states = [codexStatus.health, claudeStatus.health]
+        for state in [ConnectionHealth.connected, .syncing, .stale, .offline, .parseError, .signedOut, .unavailable] {
+            if states.contains(state) { return state }
+        }
+        return .notInstalled
+    }
     var menuWindows: [QuotaWindow] { QuotaDisplayPolicy.menuWindows(from: selectedQuota.snapshot?.windows ?? []) }
     var selectedTodayTokens: Int? { hasIndexed ? analytics.todayByProvider[selectedProvider] : nil }
     func status(_ provider: ProviderID) -> ProviderStatus { provider == .codex ? codexStatus : claudeStatus }
     func quota(_ provider: ProviderID) -> QuotaState { provider == .codex ? codexQuota : claudeQuota }
     func menuNumber(_ window: QuotaWindow) -> Double { menuValue == .remaining ? window.remainingPercent : window.usedPercent }
+    func paceFor(_ provider: ProviderID, _ window: QuotaWindow) -> PaceResult? {
+        pace["\(provider.rawValue):\(window.id)"]
+    }
+    private func notificationChanged(_ key: String, enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: key)
+        guard enabled else { notificationError = nil; return }
+        Task {
+            let granted = await quotaNotifier.requestPermission()
+            guard notifyCodex25 || notifyCodex10 || notifyCodexReset || notifyClaude25 else { return }
+            if !granted {
+                notificationError = "系统未允许通知。请在系统设置中为 CodexUsager 开启通知。"
+            } else { notificationError = nil }
+        }
+    }
 
     func start() {
         guard !isStarting, repository == nil, storageError == nil else { return }
@@ -101,14 +141,19 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                 repository = repo
                 try await repo.upgradeSourceIndex()
                 for provider in ProviderID.allCases {
-                    if let fresh = quota(provider).snapshot { try await repo.saveQuota(fresh) }
+                    if let fresh = quota(provider).snapshot {
+                        try await repo.saveQuota(fresh)
+                        await recordQuotaObservation(fresh, allowNotification: true)
+                    }
                     else if let key = accountKey(status(provider)),
                             let cached = try await repo.cachedQuota(provider), cached.accountKey == key {
                         var state = QuotaState(); state.apply(cached); state.markFailure("cached")
                         if provider == .codex { codexQuota = state } else { claudeQuota = state }
+                        await loadQuotaHistory(provider, accountKey: key)
                     }
                 }
                 reloadAnalytics(); importSources()
+                reloadSourceSummaries()
                 statusBar?.update(); publishWidget()
             } catch { storageError = "本地数据库无法打开或迁移。请检查磁盘空间与文件权限后重新打开 App。" }
             isStarting = false
@@ -149,12 +194,17 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         let shouldClear = changed || nextStatus.authentication == .signedOut || nextStatus.authentication == .apiKey || nextStatus.health == .notInstalled
         if shouldClear {
             state = QuotaState()
+            quotaHistory[nextStatus.id] = []
+            pace = pace.filter { !$0.key.hasPrefix(nextStatus.id.rawValue + ":") }
         }
         var snapshotToSave: QuotaSnapshot?
         if var snapshot = read.quota {
-            snapshot.accountKey = newKey
+            snapshot.accountKey = newKey ?? AccountBinding.key(provider: nextStatus.id, identity: snapshot.accountID)
             state.apply(snapshot)
-            if nextStatus.health == .stale || Date().timeIntervalSince(snapshot.fetchedAt) > 300 { state.markFailure("stale") }
+            if nextStatus.health == .stale || Date().timeIntervalSince(snapshot.fetchedAt) > 300 ||
+                snapshot.windows.contains(where: { $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > 300 }) {
+                state.markFailure("stale")
+            }
             snapshotToSave = snapshot
         } else if nextStatus.health == .offline { state.markFailure("offline") }
         else if nextStatus.quotaAvailability != .available { state = QuotaState() }
@@ -164,7 +214,10 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             do { try await repository?.clearQuota(nextStatus.id) } catch { persistenceFailed() }
         }
         if let snapshotToSave {
-            do { try await repository?.saveQuota(snapshotToSave) } catch { persistenceFailed() }
+            do {
+                try await repository?.saveQuota(snapshotToSave)
+                await recordQuotaObservation(snapshotToSave, allowNotification: !state.isStale)
+            } catch { persistenceFailed() }
         }
         if let account = nextStatus.account, nextStatus.health != .offline {
             do { try await repository?.saveAccount(account) } catch { persistenceFailed() }
@@ -182,8 +235,16 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                     }
                     sparse.accountKey = current.accountKey
                     codexQuota.merge(sparse)
+                    if codexQuota.snapshot?.windows.contains(where: {
+                        $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > 300
+                    }) == true {
+                        codexQuota.markFailure("reset_pending")
+                    }
                     if let snapshot = codexQuota.snapshot {
-                        do { try await repository?.saveQuota(snapshot) } catch { persistenceFailed() }
+                        do {
+                            try await repository?.saveQuota(snapshot)
+                            await recordQuotaObservation(snapshot, allowNotification: !codexQuota.isStale)
+                        } catch { persistenceFailed() }
                     }
                     statusBar?.update(); publishWidget(); scheduleResetRefresh()
                 case .accountChanged: invalidateAccount()
@@ -207,7 +268,9 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
                 if refreshAutomatically { refreshAll(); importSources() }
                 for provider in ProviderID.allCases {
-                    if let snapshot = quota(provider).snapshot, Date().timeIntervalSince(snapshot.fetchedAt) > 300 {
+                    if let snapshot = quota(provider).snapshot,
+                       Date().timeIntervalSince(snapshot.fetchedAt) > 300 ||
+                       snapshot.windows.contains(where: { Date().timeIntervalSince($0.fetchedAt) > 300 }) {
                         if provider == .codex { codexQuota.markFailure("stale") } else { claudeQuota.markFailure("stale") }
                     }
                 }
@@ -254,7 +317,7 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             }
             if !Task.isCancelled { lastImport = .now }
             isImporting = false; importTask = nil
-            if changed { reloadAnalytics() }
+            if changed { reloadAnalytics(); reloadSourceSummaries() }
         }
     }
     func cancelImport() { importTask?.cancel() }
@@ -274,6 +337,19 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             } catch is CancellationError { }
             catch { if generation == analyticsGeneration { persistenceFailed() } }
             if generation == analyticsGeneration { isAggregating = false }
+        }
+    }
+    private func reloadSourceSummaries() {
+        guard let repository else { return }
+        sourceSummaryGeneration += 1
+        let generation = sourceSummaryGeneration
+        Task {
+            do {
+                let value = try await repository.sourceCenterSummaries()
+                if generation == sourceSummaryGeneration { sourceSummaries = value }
+            }
+            catch is CancellationError { }
+            catch { persistenceFailed() }
         }
     }
     func loadSession(_ session: SessionSummary?) {
@@ -324,6 +400,44 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         }
     }
     private func persistenceFailed() { storageError = "本地统计保存或读取失败。请检查磁盘空间和文件权限，然后刷新。" }
+    private func recordQuotaObservation(_ snapshot: QuotaSnapshot, allowNotification: Bool) async {
+        guard let repository, let key = snapshot.accountKey else { return }
+        do {
+            let previous = try await repository.quotaHistory(provider: snapshot.provider, accountKey: key,
+                                                             since: Date().addingTimeInterval(-90 * 24 * 3600))
+            try await repository.recordQuotaHistory(snapshot)
+            await loadQuotaHistory(snapshot.provider, accountKey: key)
+            guard allowNotification, notifyCodex25 || notifyCodex10 || notifyCodexReset || notifyClaude25,
+                  quota(snapshot.provider).snapshot?.accountKey == key,
+                  quota(snapshot.provider).snapshot?.fetchedAt == snapshot.fetchedAt,
+                  !quota(snapshot.provider).isStale else { return }
+            notificationError = await quotaNotifier.evaluate(snapshot, history: previous,
+                codex25: notifyCodex25, codex10: notifyCodex10,
+                codexReset: notifyCodexReset, claude25: notifyClaude25)
+        } catch { persistenceFailed() }
+    }
+    private func loadQuotaHistory(_ provider: ProviderID, accountKey: String) async {
+        guard let repository else { return }
+        do {
+            let points = try await repository.quotaHistory(provider: provider, accountKey: accountKey,
+                                                           since: Date().addingTimeInterval(-90 * 24 * 3600))
+            guard let current = quota(provider).snapshot, current.accountKey == accountKey else { return }
+            quotaHistory[provider] = points
+            for window in current.windows {
+                let measured = PaceCalculator.calculate(current: window, history: points, observedTokens: nil)
+                let tokens: Int?
+                if let measured {
+                    let start = window.fetchedAt.addingTimeInterval(-measured.sampleHours * 3600)
+                    tokens = try await repository.observedTokens(provider: provider, from: start, through: window.fetchedAt)
+                }
+                else { tokens = nil }
+                guard quota(provider).snapshot?.accountKey == accountKey,
+                      quota(provider).snapshot?.fetchedAt == current.fetchedAt else { return }
+                pace["\(provider.rawValue):\(window.id)"] = PaceCalculator.calculate(
+                    current: window, history: points, observedTokens: tokens)
+            }
+        } catch { persistenceFailed() }
+    }
     private func publishWidget() {
         let providers = ProviderID.allCases.map { provider in
             let status = status(provider), quota = quota(provider)

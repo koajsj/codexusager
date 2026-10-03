@@ -32,7 +32,7 @@ public enum WidgetSnapshotStore {
     public static let kind = "CodexUsager.Quota"
     public static func location() -> URL? {
         guard let group = Bundle.main.object(forInfoDictionaryKey: "UsageAppGroup") as? String,
-              !group.isEmpty, !group.hasPrefix("."), !group.contains("$("),
+              group.hasPrefix("group."), !group.contains("$("),
               let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return nil }
         return root.appendingPathComponent("quota-snapshot.json")
     }
@@ -46,8 +46,19 @@ public enum WidgetSnapshotStore {
     public static func read() -> WidgetSnapshot? {
         guard let url = location(), let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
+        let latestAllowed = Date().addingTimeInterval(60)
         guard let data = try? handle.read(upToCount: 64 * 1024 + 1), data.count <= 64 * 1024,
-              let snapshot = try? JSONDecoder().decode(WidgetSnapshot.self, from: data), snapshot.version == 1 else { return nil }
+              let snapshot = try? JSONDecoder().decode(WidgetSnapshot.self, from: data), snapshot.version == 1,
+              snapshot.generatedAt <= latestAllowed,
+              snapshot.providers.count <= 2,
+              Set(snapshot.providers.map(\.id)).count == snapshot.providers.count,
+              snapshot.providers.allSatisfy({ provider in
+                  (provider.id == "codex" || provider.id == "claude") && provider.windows.count <= 2 &&
+                  (provider.updatedAt.map { $0 <= latestAllowed } ?? true) &&
+                  provider.windows.allSatisfy {
+                      $0.updatedAt <= latestAllowed && $0.remaining.isFinite && (0...100).contains($0.remaining)
+                  }
+              }) else { return nil }
         return snapshot
     }
 }

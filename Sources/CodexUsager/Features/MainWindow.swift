@@ -53,7 +53,7 @@ struct MainWindow: View {
                 .navigationSplitViewColumnWidth(min: 150, ideal: 172, max: 210)
             } detail: {
                 VStack(spacing: 0) {
-                    content(width: max(320, geometry.size.width - (columnVisibility == .detailOnly ? 0 : 182) - (inspectorPresented ? 235 : 0)),
+                    content(width: max(320, geometry.size.width - (columnVisibility == .detailOnly ? 0 : 172) - (inspectorPresented ? 285 : 0) - 32),
                             windowWidth: geometry.size.width)
                     if let error = model.storageError ?? model.operationError {
                         HStack {
@@ -70,6 +70,9 @@ struct MainWindow: View {
                 }
                 .navigationTitle(selection?.title ?? String(localized: "概览"))
                 .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        StatusBadge(health: model.overallHealth)
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button { model.refreshAll(); model.importSources() } label: {
                             Image(systemName: "arrow.clockwise")
@@ -150,8 +153,11 @@ struct MainWindow: View {
                     }
                 }
         case .sessions:
-            SessionsPage(model: model, width: width, selection: $sessionSelection, showDetail: {
-                if windowWidth >= 950 { inspectorPresented = true } else { detailSession = selectedSession }
+            SessionsPage(model: model, width: width, selection: $sessionSelection, showDetail: { id in
+                guard let session = model.analytics.sessions.first(where: { $0.id == id }) else { return }
+                sessionSelection = id
+                model.loadSession(session)
+                if windowWidth >= 950 { inspectorPresented = true } else { detailSession = session }
             })
         case .projects:
             ProjectsPage(model: model, width: width, edit: { projectEntry = $0 })

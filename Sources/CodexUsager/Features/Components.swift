@@ -43,9 +43,13 @@ struct TokenNumber: View {
 struct Metric: View {
     let value: Int?
     let title: String
+    var color: Color? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 5) {
+                if let color { Circle().fill(color).frame(width: 6, height: 6) }
+                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
             TokenNumber(value: value, compact: true).font(.title2.weight(.semibold))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

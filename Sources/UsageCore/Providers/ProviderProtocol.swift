@@ -10,8 +10,6 @@ public struct ProviderStatus: Sendable {
     public var authentication: AuthenticationStatus
     public var account: AccountProfile?
     public var quotaAvailability: QuotaAvailability
-    public var supportsUsage = true
-    public var supportsSessions = true
     public var health: ConnectionHealth
     public var version: String?
     public init(id: ProviderID) {

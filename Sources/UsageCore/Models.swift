@@ -13,7 +13,8 @@ public struct AccountProfile: Codable, Sendable {
     public init(provider: ProviderID, identity: String?, rawPlanType: String?, updatedAt: Date = .now) {
         self.provider = provider; self.identity = identity; self.rawPlanType = rawPlanType
         let known = ["free", "go", "plus", "pro", "prolite", "promax", "team", "business", "enterprise", "edu"]
-        normalizedPlan = rawPlanType.flatMap { known.contains($0) ? $0 : nil } ?? "unknown"
+        normalizedPlan = rawPlanType.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .flatMap { known.contains($0) ? $0 : nil } ?? "unknown"
         displayName = normalizedPlan == "unknown" ? "unknown" : normalizedPlan.capitalized
         self.updatedAt = updatedAt
     }

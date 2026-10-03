@@ -75,7 +75,9 @@ struct AdjustmentSheet: View {
     private func save() {
         do {
             let replacement = try TokenFields.parse(fields)
-            try entry.original.applying(replacement, provider: entry.provider).validate(provider: entry.provider)
+            let final = entry.original.applying(replacement, provider: entry.provider)
+            guard final.total != nil else { throw DataValidationError.missingTotal }
+            try final.validate(provider: entry.provider)
             guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw DataValidationError.missingReason }
             error = nil; submitted = true
             model.saveAdjustment(UsageAdjustment(recordID: entry.id, original: entry.original, replacement: replacement,
@@ -136,8 +138,9 @@ struct ManualUsageSheet: View {
             var tokens = try TokenFields.parse(fields)
             if tokens.total == nil {
                 guard tokens.input != nil || tokens.output != nil || tokens.cacheRead != nil || tokens.cacheWrite != nil else { throw DataValidationError.missingTotal }
-                if provider == .codex, tokens.input == nil, tokens.output == nil { throw DataValidationError.missingTotal }
-                tokens = TokenValues().applying(tokens, provider: provider)
+                tokens.total = provider == .codex
+                    ? SafeCount.add(tokens.input ?? 0, tokens.output ?? 0)
+                    : SafeCount.sum([tokens.input ?? 0, tokens.cacheRead ?? 0, tokens.cacheWrite ?? 0, tokens.output ?? 0])
             }
             try tokens.validate(provider: provider)
             let record = ManualUsage(id: existing?.id ?? UUID().uuidString, provider: provider, timestamp: timestamp,

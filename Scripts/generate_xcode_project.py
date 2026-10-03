@@ -78,6 +78,7 @@ app_refs = [file(p) for p in app_paths]
 bridge_ref = file("Sources/ClaudeQuotaBridge/BridgeMain.swift")
 widget_ref = file("Sources/CodexUsagerWidget/CodexUsagerWidget.swift")
 shared_ref = file("Sources/UsageCore/WidgetShared.swift")
+icon_ref = file("Assets/AppIconSource.png", "image.png")
 catalog_ref = file("Sources/CodexUsager/Resources/Localizable.xcstrings", "text.json.xcstrings")
 config_refs = [file("Config/" + p, "text.plist.xml") for p in
                ("AppInfo.plist", "WidgetInfo.plist", "App.entitlements", "Widget.entitlements")]
@@ -91,7 +92,7 @@ bridge_product = obj("product:bridge", "PBXFileReference", explicitFileType="com
 products = obj("group:products", "PBXGroup", children=[app_product, widget_product, bridge_product],
                name="Products", sourceTree="<group>")
 main_group = obj("group:main", "PBXGroup",
-                 children=app_refs + [catalog_ref, widget_ref, shared_ref, bridge_ref] + config_refs + [products],
+                 children=app_refs + [catalog_ref, icon_ref, widget_ref, shared_ref, bridge_ref] + config_refs + [products],
                  sourceTree="<group>")
 
 app_sources = phase("app:sources", "PBXSourcesBuildPhase",
@@ -101,7 +102,7 @@ widget_sources = phase("widget:sources", "PBXSourcesBuildPhase",
 bridge_sources = phase("bridge:sources", "PBXSourcesBuildPhase", [build_file("bridge:main", bridge_ref)])
 app_resources = phase("app:resources", "PBXResourcesBuildPhase", [build_file("app:catalog", catalog_ref)])
 app_icon = obj("phase:app:icon", "PBXShellScriptBuildPhase",
-               buildActionMask=2147483647, files=[], inputPaths=["$(SRCROOT)/Scripts/icon.swift"],
+               buildActionMask=2147483647, files=[], inputPaths=["$(SRCROOT)/Assets/AppIconSource.png"],
                outputPaths=["$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AppIcon.icns"],
                runOnlyForDeploymentPostprocessing=0, shellPath="/bin/bash",
                shellScript='"$SRCROOT/Scripts/generate_icon.sh" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AppIcon.icns"')
@@ -126,8 +127,11 @@ common = {
     "MACOSX_DEPLOYMENT_TARGET": "14.6",
     "SWIFT_VERSION": "6.0",
     "SWIFT_STRICT_CONCURRENCY": "complete",
+    "MARKETING_VERSION": "1.0.0",
+    "CURRENT_PROJECT_VERSION": "1",
+    "ENABLE_HARDENED_RUNTIME": "YES",
     "CODE_SIGN_STYLE": "Automatic",
-    "USAGE_APP_GROUP": "$(DEVELOPMENT_TEAM).dev.codexusager.shared",
+    "USAGE_APP_GROUP": "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared",
 }
 app_settings = {
     **common, "PRODUCT_BUNDLE_IDENTIFIER": "dev.codexusager.app",

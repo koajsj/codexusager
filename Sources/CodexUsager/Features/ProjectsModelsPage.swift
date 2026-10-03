@@ -8,9 +8,12 @@ struct ProjectsPage: View {
     var body: some View {
         VStack(spacing: 12) {
             AnalyticsFilters(model: model)
-            if model.analytics.projects.isEmpty { EmptyStatistics(model: model) }
+            if model.analytics.projects.isEmpty && model.analytics.rules.isEmpty { EmptyStatistics(model: model) }
             else {
                 List {
+                    if model.analytics.projects.isEmpty {
+                        Text("当前项目均已忽略，可在下方恢复自动识别。").foregroundStyle(.secondary)
+                    }
                     ForEach(model.analytics.projects) { project in
                         HStack(spacing: 12) {
                             Image(systemName: "folder").foregroundStyle(Color.blue)
@@ -72,7 +75,12 @@ struct ModelsPage: View {
                         HStack {
                             if let cost = item.estimatedCost {
                                 Text("等效 API 成本（估算）：\(cost.formatted(.currency(code: "USD")))").font(.caption).foregroundStyle(.secondary)
-                            } else { Text("估算不可用 · 未配置该模型单价").font(.caption).foregroundStyle(.secondary) }
+                            } else {
+                                Text(model.analytics.prices.contains(where: { $0.id == item.id })
+                                     ? "估算不可用 · 部分记录缺少必要字段"
+                                     : "估算不可用 · 未配置该模型单价")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                             Spacer(); Button("配置单价") { editPrice(item) }.buttonStyle(.link).font(.caption)
                         }
                     }.padding(.vertical, 8)

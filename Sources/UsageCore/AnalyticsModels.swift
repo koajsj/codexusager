@@ -49,9 +49,25 @@ public struct TokenValues: Codable, Sendable, Equatable {
         for metric in TokenMetric.allCases where override[metric] != nil { result[metric] = override[metric] }
         let componentsChanged = [TokenMetric.input, .cacheRead, .cacheWrite, .output].contains { override[$0] != nil }
         if override.total == nil, componentsChanged {
-            result.total = provider == .codex
-                ? SafeCount.sum([result.input ?? 0, result.output ?? 0])
-                : SafeCount.sum([result.input ?? 0, result.cacheRead ?? 0, result.cacheWrite ?? 0, result.output ?? 0])
+            // Recalculate from complete components when possible. Otherwise adjust
+            // the known source total by changes to fields that contribute to it.
+            if provider == .codex, let input = result.input, let output = result.output {
+                result.total = SafeCount.add(input, output)
+            } else if provider == .claude, let input = result.input, let read = result.cacheRead,
+                      let write = result.cacheWrite, let output = result.output {
+                result.total = SafeCount.sum([input, read, write, output])
+            } else if var calculated = total {
+                let additive: [TokenMetric] = provider == .codex
+                    ? [.input, .output] : [.input, .cacheRead, .cacheWrite, .output]
+                for metric in additive {
+                    guard let new = override[metric] else { continue }
+                    guard let old = self[metric], calculated >= old else { result.total = nil; return result }
+                    let (next, overflow) = (calculated - old).addingReportingOverflow(new)
+                    guard !overflow else { result.total = nil; return result }
+                    calculated = next
+                }
+                result.total = calculated
+            } else { result.total = nil }
         }
         return result
     }

@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import CoreFoundation
 
 public enum AccountBinding {
     public static func key(provider: ProviderID, identity: String?) -> String? {
@@ -21,10 +22,15 @@ public enum ClaudeQuotaBridge {
         var windows: [QuotaWindow] = []
         for (key, duration) in [("five_hour", 300), ("seven_day", 10080), ("spend_limit", 0)] {
             guard let value = rates[key] as? [String: Any],
-                  let used = (value["used_percentage"] as? NSNumber)?.doubleValue, used.isFinite else { continue }
-            let reset = (value["resets_at"] as? NSNumber)?.doubleValue
+                  let number = value["used_percentage"] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else { continue }
+            let used = number.doubleValue
+            guard used.isFinite, (0...100).contains(used) else { continue }
+            let reset = (value["resets_at"] as? NSNumber).flatMap {
+                CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0.doubleValue
+            }
             windows.append(QuotaWindow(limitID: "claude", slot: key, limitName: key == "spend_limit" ? "消费限额" : nil,
-                durationMinutes: duration == 0 ? nil : duration, usedPercent: max(0, used), remainingPercent: min(100, max(0, 100 - used)),
+                durationMinutes: duration == 0 ? nil : duration, usedPercent: used, remainingPercent: 100 - used,
                 resetsAt: reset.flatMap { $0.isFinite && (0...32_503_680_000).contains($0) ? Date(timeIntervalSince1970: $0) : nil },
                 model: nil, fetchedAt: now, source: "claude-statusline"))
         }
@@ -45,7 +51,12 @@ public enum ClaudeQuotaBridge {
         let data = try handle.read(upToCount: 64 * 1024 + 1) ?? Data()
         guard data.count <= 64 * 1024 else { throw ProviderError.invalidResponse }
         let snapshot = try JSONDecoder().decode(QuotaSnapshot.self, from: data)
-        guard snapshot.provider == .claude, snapshot.windows.allSatisfy({ $0.remainingPercent.isFinite && (0...100).contains($0.remainingPercent) }),
+        guard snapshot.provider == .claude, !snapshot.windows.isEmpty, snapshot.windows.count <= 16,
+              snapshot.windows.allSatisfy({
+            $0.usedPercent.isFinite && (0...100).contains($0.usedPercent) &&
+            $0.remainingPercent.isFinite && (0...100).contains($0.remainingPercent) &&
+            abs($0.usedPercent + $0.remainingPercent - 100) < 0.01
+        }),
               snapshot.fetchedAt <= Date().addingTimeInterval(60) else { throw ProviderError.invalidResponse }
         return snapshot
     }

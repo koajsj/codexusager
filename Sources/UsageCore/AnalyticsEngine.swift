@@ -16,6 +16,8 @@ struct AnalyticsEngine {
     private var modelSessions: [String: Set<String>] = [:]
     private var modelProjects: [String: Set<String>] = [:]
     private var modelDays: [String: [Date: Int]] = [:]
+    private var modelCosts: [String: Double] = [:]
+    private var unpricedModels: Set<String> = []
     private var days: [Date: Int] = [:]
     private var hours: [Date: Int] = [:]
     private var providerTokens: [ProviderID: Int] = [:]
@@ -123,6 +125,10 @@ struct AnalyticsEngine {
         let modelName = entry.model ?? "unknown", modelKey = "\(entry.provider.rawValue):\(modelName)"
         var model = modelRows[modelKey] ?? ModelSummary(name: modelName, provider: entry.provider, tokens: TokenValues(), sessionCount: 0, projectCount: 0, trend: [], estimatedCost: nil)
         model.tokens.accumulate(entry.final); modelRows[modelKey] = model
+        if let price = prices[modelKey], let cost = price.estimate(entry.final),
+           (modelCosts[modelKey] ?? 0) + cost < Double.greatestFiniteMagnitude {
+            modelCosts[modelKey, default: 0] += cost
+        } else { unpricedModels.insert(modelKey) }
         modelSessions[modelKey, default: []].insert(sessionKey); modelProjects[modelKey, default: []].insert(p.key)
         var modelDay = modelDays[modelKey] ?? [:]
         modelDay[day] = SafeCount.add(modelDay[day] ?? 0, total)
@@ -136,7 +142,9 @@ struct AnalyticsEngine {
         }.sorted { ($0.tokens.total ?? 0) > ($1.tokens.total ?? 0) }
         result.models = modelRows.values.map { row in
             var row = row; row.sessionCount = modelSessions[row.id]?.count ?? 0; row.projectCount = modelProjects[row.id]?.count ?? 0
-            row.trend = points(modelDays[row.id] ?? [:]); row.estimatedCost = prices[row.id]?.estimate(row.tokens); return row
+            row.trend = points(modelDays[row.id] ?? [:])
+            row.estimatedCost = unpricedModels.contains(row.id) ? nil : modelCosts[row.id]
+            return row
         }.sorted { ($0.tokens.total ?? 0) > ($1.tokens.total ?? 0) }
         if query.from == nil, query.through == nil, let start = query.period.start(now: now) {
             var date = start
@@ -151,7 +159,10 @@ struct AnalyticsEngine {
         } else { result.trend = points(days) }
         let hourStart = calendar.dateInterval(of: .hour, for: now)?.start ?? now
         result.past24Hours = (-23...0).compactMap { calendar.date(byAdding: .hour, value: $0, to: hourStart) }.map { TrendPoint(date: $0, tokens: hours[$0] ?? 0) }
-        result.providers = ProviderID.allCases.map { ProviderTotal(id: $0, tokens: providerTokens[$0] ?? 0, sessions: providerSessions[$0]?.count ?? 0) }
+        result.providers = ProviderID.allCases.compactMap { provider in
+            guard let sessions = providerSessions[provider] else { return nil }
+            return ProviderTotal(id: provider, tokens: providerTokens[provider] ?? 0, sessions: sessions.count)
+        }
         result.availableModels = availableModels.sorted()
         result.generatedAt = now
         return result

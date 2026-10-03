@@ -14,6 +14,15 @@ struct SettingsView: View {
                 Toggle("自动刷新额度与本地用量", isOn: $model.refreshAutomatically)
                 Text("额度按来源返回的数据展示，套餐名称不会决定额度。")
                     .font(.caption).foregroundStyle(.secondary)
+                Section("额度提醒") {
+                    Toggle("Codex 低于 25%", isOn: $model.notifyCodex25)
+                    Toggle("Codex 低于 10%", isOn: $model.notifyCodex10)
+                    Toggle("Codex 重置完成", isOn: $model.notifyCodexReset)
+                    Toggle("Claude 低于 25%", isOn: $model.notifyClaude25)
+                    Text("提醒仅在主 App 收到新的有效额度时由本机发送。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if let error = model.notificationError { Text(error).font(.caption).foregroundStyle(.orange) }
+                }
             }
             .formStyle(.grouped)
             .tabItem { Label("通用", systemImage: "gearshape") }

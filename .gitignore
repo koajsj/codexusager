@@ -1,13 +1,37 @@
 .build/
 build/
+DerivedData/
 .swiftpm/
 .DS_Store
 *.xcuserstate
 *.xcworkspace/xcuserdata/
+*.xcresult/
+*.xcarchive/
+*.app/
+*.dmg
+*.dmg.sha256
 
 # Local Xcode state and credentials
 xcuserdata/
 .env
 .env.*
+*.local.xcconfig
 *.p12
 *.mobileprovision
+*.pem
+*.p8
+*.key
+*.log
+*.jsonl
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+auth.json
+auth.*.json
+credentials.json
+cookies.json
+/local-data/
+/exports/
+/sessions/
+/archived_sessions/

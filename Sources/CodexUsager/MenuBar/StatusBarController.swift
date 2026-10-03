@@ -25,11 +25,15 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
         guard let button = item.button else { return }
         let count = model.menuWindows.count
         let width: CGFloat
-        switch model.menuStyle {
-        case .icon: width = 25
-        case .minimal: width = count == 0 ? 112 : 75
-        case .quotaCountdown: width = 162
-        case .dualQuota: width = count >= 2 ? 158 : count == 1 ? 124 : 128
+        if model.selectedQuota.isStale && model.menuStyle != .icon {
+            width = 100
+        } else {
+            switch model.menuStyle {
+            case .icon: width = 25
+            case .minimal: width = count == 0 ? 112 : 75
+            case .quotaCountdown: width = 162
+            case .dualQuota: width = count >= 2 ? 168 : count == 1 ? 136 : 128
+            }
         }
         item.length = width
         let view = label ?? ClickThroughHostingView(rootView: StatusLabel(model: model))
@@ -56,6 +60,8 @@ private struct StatusLabel: View {
                 .accessibilityHidden(true)
             if model.menuStyle == .icon {
                 EmptyView()
+            } else if model.selectedQuota.isStale && !model.menuWindows.isEmpty {
+                Text("额度已过期").font(.system(size: 11, weight: .medium)).lineLimit(1)
             } else if model.menuWindows.isEmpty {
                 Text(model.selectedStatus.health.localizedLabel)
                     .font(.system(size: 11, weight: .medium)).lineLimit(1)
@@ -67,7 +73,10 @@ private struct StatusLabel: View {
                 VStack(alignment: .leading, spacing: -1) {
                     Text("\(model.menuWindows[0].localizedName)  \(number(model.menuWindows[0]))")
                     if let due = model.menuWindows[0].resetsAt {
-                        Text(due, style: .relative)
+                        let now = Date()
+                        if due > now {
+                            Text(timerInterval: now...due, countsDown: true).monospacedDigit()
+                        } else { Text("正在更新") }
                     } else { Text("重置时间未提供") }
                 }
                 .font(.system(size: 10, weight: .medium))
@@ -76,10 +85,12 @@ private struct StatusLabel: View {
                 VStack(alignment: .leading, spacing: -1) {
                     ForEach(Array(model.menuWindows.prefix(2))) { window in
                         HStack(spacing: 3) {
-                            Text(window.localizedName).lineLimit(1)
+                            Text(window.localizedName).lineLimit(1).truncationMode(.middle)
+                                .minimumScaleFactor(0.82)
                             Spacer(minLength: 2)
                             Text(model.menuNumber(window), format: .number.precision(.fractionLength(0)))
-                                .monospacedDigit().contentTransition(reduceMotion ? .identity : .numericText())
+                                .monospacedDigit().fixedSize(horizontal: true, vertical: false)
+                                .contentTransition(reduceMotion ? .identity : .numericText())
                             Text("%").padding(.leading, -3)
                         }
                     }
@@ -90,7 +101,10 @@ private struct StatusLabel: View {
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 3)
-        .accessibilityLabel(model.menuWindows.map { "\($0.localizedName) \(number($0))" }.joined(separator: ", "))
+        .accessibilityLabel(model.selectedStatus.displayName + " " + (model.menuWindows.isEmpty
+            ? model.selectedStatus.health.localizedLabel
+            : model.menuWindows.map { "\($0.localizedName) \(number($0))" }.joined(separator: ", ")) +
+            (model.selectedQuota.isStale ? "，上次已知值" : ""))
     }
     private func number(_ window: QuotaWindow) -> String {
         "\(Int(model.menuNumber(window).rounded()))%"

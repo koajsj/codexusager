@@ -12,13 +12,11 @@ import Testing
 func liveReadOnlyProviderIntegration() async throws {
     let codex = CodexProvider()
     let result = await codex.refresh()
-    print("Codex live: auth=\(result.status.authentication.rawValue), plan=\(result.status.account?.rawPlanType ?? "unknown"), windows=\(result.quota?.windows.count ?? 0), health=\(result.status.health.rawValue)")
     #expect(result.status.authentication == .chatGPT)
     #expect(result.status.health == .connected)
     #expect(result.quota?.windows.isEmpty == false)
     await codex.stop()
     let claude = await ClaudeProvider().refresh()
-    print("Claude live: auth=\(claude.status.authentication.rawValue), quota=\(claude.status.quotaAvailability.rawValue)")
     #expect(claude.status.authentication == .authenticated)
 }
 
@@ -41,7 +39,6 @@ func liveLocalSessionFormats() async throws {
             }
             if foundRecord || examined >= 20 { break }
         }
-        print("\(provider.rawValue) local JSONL: metadata_records_found=\(foundRecord), files_examined=\(examined)")
         #expect(foundRecord)
     }
 }

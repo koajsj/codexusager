@@ -34,6 +34,20 @@ import SwiftData
     public init(provider: String, payload: Data) { self.provider = provider; self.payload = payload }
 }
 
+@Model public final class StoredQuotaHistory {
+    @Attribute(.unique) public var id: String
+    public var provider: String
+    public var accountKey: String
+    public var windowID: String
+    public var timestamp: Date
+    public var payload: Data
+    public init(_ point: QuotaHistoryPoint) throws {
+        id = point.id; provider = point.provider.rawValue; accountKey = point.accountKey
+        windowID = point.windowID; timestamp = point.timestamp
+        payload = try JSONEncoder().encode(point)
+    }
+}
+
 @Model public final class StoredSession {
     @Attribute(.unique) public var key: String
     public var provider: String
@@ -175,15 +189,25 @@ public enum UsageSchemaV2: VersionedSchema {
          StoredManualUsage.self, StoredProjectRule.self, StoredModelPrice.self, StoredSourceLink.self]
     }
 }
+public enum UsageSchemaV3: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { .init(3, 0, 0) }
+    public static var models: [any PersistentModel.Type] {
+        [StoredUsage.self, StoredCursor.self, StoredAccount.self, StoredQuota.self,
+         StoredSession.self, StoredProject.self, StoredHealth.self, StoredAdjustment.self,
+         StoredManualUsage.self, StoredProjectRule.self, StoredModelPrice.self, StoredSourceLink.self,
+         StoredQuotaHistory.self]
+    }
+}
 public enum UsageMigrationPlan: SchemaMigrationPlan {
-    public static var schemas: [any VersionedSchema.Type] { [UsageSchemaV1.self, UsageSchemaV2.self] }
+    public static var schemas: [any VersionedSchema.Type] { [UsageSchemaV1.self, UsageSchemaV2.self, UsageSchemaV3.self] }
     public static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: UsageSchemaV1.self, toVersion: UsageSchemaV2.self)]
+        [.lightweight(fromVersion: UsageSchemaV1.self, toVersion: UsageSchemaV2.self),
+         .lightweight(fromVersion: UsageSchemaV2.self, toVersion: UsageSchemaV3.self)]
     }
 }
 public enum UsageStorage {
     public static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: UsageSchemaV2.self)
+        let schema = Schema(versionedSchema: UsageSchemaV3.self)
         let config: ModelConfiguration
         if let url { config = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none) }
         else { config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none) }
@@ -232,6 +256,18 @@ public struct UsageDashboard: Sendable {
     public init() {}
 }
 
+public struct SourceCenterSummary: Sendable {
+    public var indexedSessions: Int = 0
+    public var indexedRecords: Int = 0
+    public var parsedRecords: Int = 0
+    public var malformedRecords: Int = 0
+    public var unsupportedRecords: Int? = 0
+    public var failedFiles: Int = 0
+    public var deduplicatedRecords: Int? = 0
+    public var lastScan: Date?
+    public init() {}
+}
+
 @ModelActor public actor UsageRepository {
     /// Builds a source index once for legacy normalized rows. No source body is retained.
     public func upgradeSourceIndex() throws {
@@ -255,7 +291,9 @@ public struct UsageDashboard: Sendable {
         var cursor = try cursorRow.map { try JSONDecoder().decode(ImportCursor.self, from: $0.payload) }
         var row = cursorRow
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
-        if let cursor, cursor.decoderRevision == 2,
+        var healthRow = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
+        let previousHealth = try healthRow.map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
+        if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 2,
            cursor.offset == cursor.fileSize,
            (attrs[.size] as? NSNumber)?.uint64Value == cursor.fileSize,
            attrs[.modificationDate] as? Date == cursor.modifiedAt,
@@ -285,7 +323,6 @@ public struct UsageDashboard: Sendable {
                 let payload = try JSONEncoder().encode(result.cursor)
                 if let row { row.payload = payload }
                 else { let new = StoredCursor(path: path, payload: payload); modelContext.insert(new); row = new }
-                let healthRow = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
                 let old = try healthRow.map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
                 let reset = result.rebuilt
                 let health = SourceHealth(provider: provider, sourceFile: path,
@@ -296,9 +333,10 @@ public struct UsageDashboard: Sendable {
                     unsupportedRecords: SafeCount.add(reset ? 0 : old?.unsupportedRecords ?? 0, result.unsupportedRecords))
                 let healthData = try JSONEncoder().encode(health)
                 if let healthRow { healthRow.payload = healthData }
-                else { modelContext.insert(StoredHealth(path: path, payload: healthData)) }
+                else { let new = StoredHealth(path: path, payload: healthData); modelContext.insert(new); healthRow = new }
                 try modelContext.save()
-                changed = changed || result.cursor.offset != cursor?.offset || result.unsupportedRecords > 0
+                changed = changed || result.cursor.offset != cursor?.offset || result.unsupportedRecords > 0 ||
+                    previousHealth?.error != health.error
                 cursor = result.cursor
             } catch { modelContext.rollback(); throw error }
             if result.reachedEnd { break }
@@ -364,6 +402,42 @@ public struct UsageDashboard: Sendable {
         if let row = try modelContext.fetch(FetchDescriptor<StoredQuota>(predicate: #Predicate { $0.provider == id })).first { row.payload = data }
         else { modelContext.insert(StoredQuota(provider: id, payload: data)) }
         try modelContext.save()
+    }
+
+    /// At most one sample per 15 minutes in a reset cycle; keep 90 days.
+    public func recordQuotaHistory(_ snapshot: QuotaSnapshot) throws {
+        guard let key = snapshot.accountKey, !key.isEmpty else { return }
+        let cutoff = snapshot.fetchedAt.addingTimeInterval(-90 * 24 * 3600)
+        let provider = snapshot.provider.rawValue
+        for old in try modelContext.fetch(FetchDescriptor<StoredQuotaHistory>(predicate: #Predicate { $0.timestamp < cutoff })) {
+            modelContext.delete(old)
+        }
+        var seenWindows: Set<String> = []
+        for window in snapshot.windows where window.remainingPercent.isFinite && window.usedPercent.isFinite &&
+            (0...100).contains(window.remainingPercent) && (0...100).contains(window.usedPercent) {
+            let windowID = window.id
+            guard seenWindows.insert(windowID).inserted else { continue }
+            var descriptor = FetchDescriptor<StoredQuotaHistory>(predicate: #Predicate {
+                $0.provider == provider && $0.accountKey == key && $0.windowID == windowID
+            }, sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+            descriptor.fetchLimit = 1
+            let previous = try modelContext.fetch(descriptor).first.flatMap {
+                try JSONDecoder().decode(QuotaHistoryPoint.self, from: $0.payload)
+            }
+            if let previous, previous.timestamp >= window.fetchedAt { continue }
+            if let previous, previous.resetsAt == window.resetsAt,
+               window.fetchedAt.timeIntervalSince(previous.timestamp) < 15 * 60 { continue }
+            modelContext.insert(try StoredQuotaHistory(QuotaHistoryPoint(provider: snapshot.provider, accountKey: key, window: window)))
+        }
+        try modelContext.save()
+    }
+
+    public func quotaHistory(provider: ProviderID, accountKey: String, since: Date) throws -> [QuotaHistoryPoint] {
+        let id = provider.rawValue
+        let rows = try modelContext.fetch(FetchDescriptor<StoredQuotaHistory>(predicate: #Predicate {
+            $0.provider == id && $0.accountKey == accountKey && $0.timestamp >= since
+        }, sortBy: [SortDescriptor(\.timestamp)]))
+        return try rows.map { try JSONDecoder().decode(QuotaHistoryPoint.self, from: $0.payload) }
     }
 
     public func cachedQuota(_ provider: ProviderID) throws -> QuotaSnapshot? {

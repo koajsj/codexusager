@@ -38,8 +38,8 @@ import Testing
 
 @Test func windowSizingFitsSmallScreenWithoutBreakingMinimum() {
     #expect(WindowSizing.initial(visible: .init(width: 1440, height: 900)) == .init(width: 720, height: 495))
-    #expect(WindowSizing.initial(visible: .init(width: 900, height: 650)) == .init(width: 620, height: 420))
-    #expect(WindowSizing.minimum == .init(width: 620, height: 420))
+    #expect(WindowSizing.initial(visible: .init(width: 900, height: 650)) == .init(width: 540, height: 390))
+    #expect(WindowSizing.minimum == .init(width: 540, height: 390))
 }
 
 @Test func resetDoesNotInventNewQuota() throws {
@@ -62,6 +62,26 @@ import Testing
     state.markFailure("offline")
     #expect(state.snapshot?.windows.first?.remainingPercent == 80)
     #expect(state.isStale)
+}
+
+@Test func paceUsesOnlyMatchingResetCycle() throws {
+    let start = Date(timeIntervalSince1970: 2_000_000_000)
+    let reset = start.addingTimeInterval(3 * 3600)
+    let first = QuotaWindow(limitID: "codex", slot: "primary", limitName: nil,
+                            durationMinutes: 300, usedPercent: 20, remainingPercent: 80,
+                            resetsAt: reset, model: nil, fetchedAt: start, source: "test")
+    var current = first
+    current.usedPercent = 38; current.remainingPercent = 62
+    current.fetchedAt = start.addingTimeInterval(3600)
+    let point = QuotaHistoryPoint(provider: .codex, accountKey: "test-account", window: first)
+    let result = try #require(PaceCalculator.calculate(current: current, history: [point],
+                                                       observedTokens: 1_200, now: current.fetchedAt))
+    #expect(result.projectedRemaining == 26)
+    #expect(result.percentPerHour == 18)
+    #expect(result.tokensPerHour == 1_200)
+    current.resetsAt = reset.addingTimeInterval(300)
+    #expect(PaceCalculator.calculate(current: current, history: [point], observedTokens: 1_200,
+                                     now: current.fetchedAt) == nil)
 }
 
 @Test func sparseUpdateMergesWithoutClearingOtherBucket() throws {

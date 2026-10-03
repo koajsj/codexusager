@@ -24,14 +24,16 @@ public actor ClaudeProvider: UsageProvider {
             status.authentication = loggedIn ? .authenticated : .signedOut
             status.health = loggedIn ? .connected : .signedOut
             status.account = loggedIn ? AccountProfile(provider: .claude, identity: object["email"] as? String, rawPlanType: object["subscriptionType"] as? String) : nil
-            let versionNumber = status.version?.split(separator: " ").first.map(String.init) ?? "0"
-            status.quotaAvailability = !loggedIn ? .signedOut : (versionNumber.compare("2.1.251", options: .numeric) == .orderedAscending ? .unsupportedVersion : .unavailable)
-            if loggedIn, status.quotaAvailability != .unsupportedVersion,
-               let key = AccountBinding.key(provider: .claude, identity: status.account?.identity),
-               let quota = try ClaudeQuotaBridge.read(), quota.accountKey == key {
-                status.quotaAvailability = .available
-                if Date().timeIntervalSince(quota.fetchedAt) > 300 { status.health = .stale }
-                return ProviderRead(status: status, quota: quota)
+            status.quotaAvailability = loggedIn ? .unavailable : .signedOut
+            if loggedIn,
+               let key = AccountBinding.key(provider: .claude, identity: status.account?.identity) {
+                do {
+                    if let quota = try ClaudeQuotaBridge.read(), quota.accountKey == key {
+                        status.quotaAvailability = .available
+                        if Date().timeIntervalSince(quota.fetchedAt) > 300 { status.health = .stale }
+                        return ProviderRead(status: status, quota: quota)
+                    }
+                } catch { status.health = .parseError }
             }
         } catch { status.health = .offline; status.quotaAvailability = .offline }
         return ProviderRead(status: status, quota: nil)

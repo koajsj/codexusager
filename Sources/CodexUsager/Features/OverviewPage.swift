@@ -12,6 +12,7 @@ struct OverviewPage: View {
     }
     var body: some View {
         PageFrame {
+            VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                 ProviderPanel(status: model.codexStatus, quota: model.codexQuota, model: model, action: showSources)
                 ProviderPanel(status: model.claudeStatus, quota: model.claudeQuota, model: model, action: showSources)
@@ -24,7 +25,9 @@ struct OverviewPage: View {
                     Divider()
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), alignment: .leading)], spacing: 12) {
                         ForEach([TokenMetric.input, .cacheRead, .output, .reasoning]) { metric in
-                            Metric(value: model.hasIndexed ? model.analytics.today[metric] : nil, title: metric.title)
+                            Metric(value: model.hasIndexed ? model.analytics.today[metric] : nil,
+                                   title: metric.title,
+                                   color: [.input: .blue, .cacheRead: .purple, .output: .green, .reasoning: .orange][metric])
                         }
                     }
                     Text("缓存与推理可能属于输入或输出的子集，总计遵循各来源语义。")
@@ -48,7 +51,7 @@ struct OverviewPage: View {
                         let project = projects[index]
                         HStack(spacing: 8) {
                             Text("\(index + 1)").font(.caption).frame(width: 20, height: 20).background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-                            Circle().fill(Color.blue).frame(width: 6, height: 6)
+                            Circle().fill([Color.blue, .purple, .green][index]).frame(width: 6, height: 6)
                             Text(project.name).lineLimit(1)
                             Spacer(minLength: 4)
                             TokenNumber(value: project.tokens.total, compact: true).font(.caption).foregroundStyle(.secondary)
@@ -75,6 +78,8 @@ struct OverviewPage: View {
                         HStack { ProgressView().controlSize(.mini); Text("正在索引").font(.caption); Spacer(); Button("停止") { model.cancelImport() }.buttonStyle(.link).font(.caption) }
                     }
                 }
+            }
+            QuotaInsights(model: model)
             }
         }
     }

@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import SwiftData
 
@@ -43,15 +42,19 @@ extension UsageRepository {
         var first = true
         if format == .json { try handle.write(contentsOf: Data("[\n".utf8)) }
         else { try handle.write(contentsOf: Data("id,provider,timestamp,session,project,model,input,cache_read,cache_write,output,reasoning,total,original_total,manual,sessions,reason,note,original,correction,final_values\n".utf8)) }
+        var anonymousProjects: [String: String] = [:]
         func sanitizedProject(_ value: String?) -> String? {
             guard let value, value != "unknown" else { return nil }
             if revealPaths { return value }
-            let hash = SHA256.hash(data: Data(value.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
-            return "project_" + hash
+            if let existing = anonymousProjects[value] { return existing }
+            let label = "project_\(anonymousProjects.count + 1)"
+            anonymousProjects[value] = label
+            return label
         }
         func csv(_ value: String?) -> String {
             var value = value ?? ""
-            if let first = value.first, "=+-@\t\r".contains(first) { value = "'" + value }
+            if let first = value.trimmingCharacters(in: .whitespacesAndNewlines).first,
+               "=+-@".contains(first) { value = "'" + value }
             return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         func write(_ row: ExportRow) throws {

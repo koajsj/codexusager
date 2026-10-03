@@ -2,6 +2,43 @@ import Foundation
 import SwiftData
 
 extension UsageRepository {
+    public func sourceCenterSummaries() throws -> [ProviderID: SourceCenterSummary] {
+        var summaries: [ProviderID: SourceCenterSummary] = [:]
+        var sessions: [ProviderID: Set<String>] = [:]
+        var unknownUnsupported: Set<ProviderID> = []
+        var unknownDedup: Set<ProviderID> = []
+        try modelContext.enumerate(FetchDescriptor<StoredUsage>(), batchSize: 256) { row in
+            try Task.checkCancellation()
+            guard let provider = ProviderID(rawValue: row.provider) else { return }
+            var summary = summaries[provider] ?? SourceCenterSummary()
+            summary.indexedRecords = SafeCount.add(summary.indexedRecords, 1)
+            summaries[provider] = summary
+            sessions[provider, default: []].insert(row.sessionKey)
+        }
+        for row in try modelContext.fetch(FetchDescriptor<StoredHealth>()) {
+            let health = try JSONDecoder().decode(SourceHealth.self, from: row.payload)
+            var summary = summaries[health.provider] ?? SourceCenterSummary()
+            summary.parsedRecords = SafeCount.add(summary.parsedRecords, health.importedRecords)
+            summary.malformedRecords = SafeCount.add(summary.malformedRecords, health.malformedLines)
+            if let count = health.unsupportedRecords {
+                summary.unsupportedRecords = SafeCount.add(summary.unsupportedRecords ?? 0, count)
+            } else { unknownUnsupported.insert(health.provider) }
+            if let count = health.deduplicatedRecords {
+                summary.deduplicatedRecords = SafeCount.add(summary.deduplicatedRecords ?? 0, count)
+            } else { unknownDedup.insert(health.provider) }
+            if health.error == "read_failed" { summary.failedFiles = SafeCount.add(summary.failedFiles, 1) }
+            summary.lastScan = max(summary.lastScan ?? health.lastScan, health.lastScan)
+            summaries[health.provider] = summary
+        }
+        for provider in ProviderID.allCases {
+            var summary = summaries[provider] ?? SourceCenterSummary()
+            summary.indexedSessions = sessions[provider]?.count ?? 0
+            if unknownUnsupported.contains(provider) { summary.unsupportedRecords = nil }
+            if unknownDedup.contains(provider) { summary.deduplicatedRecords = nil }
+            summaries[provider] = summary
+        }
+        return summaries
+    }
     func metadata() throws -> ([ProjectRule], [UsageAdjustment], [ManualUsage], [ModelPrice]) {
         let decoder = JSONDecoder()
         let rules = try modelContext.fetch(FetchDescriptor<StoredProjectRule>()).map { try decoder.decode(ProjectRule.self, from: $0.payload) }
@@ -27,6 +64,30 @@ extension UsageRepository {
         result.manual = manual.sorted { $0.timestamp > $1.timestamp }; result.prices = prices
         return result
     }
+    public func observedTokens(provider: ProviderID, from start: Date, through end: Date) throws -> Int? {
+        guard start < end else { return nil }
+        let (rules, adjustments, manual, _) = try metadata()
+        var query = UsageQuery(); query.period = .all; query.provider = provider
+        let engine = AnalyticsEngine(query: query, now: end, rules: rules, adjustments: adjustments, prices: [])
+        let id = provider.rawValue
+        var total = 0
+        var available = true
+        try modelContext.enumerate(FetchDescriptor<StoredUsage>(predicate: #Predicate {
+            $0.provider == id && $0.timestamp >= start && $0.timestamp <= end
+        }), batchSize: 256) { row in
+            try Task.checkCancellation()
+            let record = try JSONDecoder().decode(UsageRecord.self, from: row.payload)
+            guard !engine.project(record.projectID).ignored else { return }
+            if let count = engine.entry(record).final.total { total = SafeCount.add(total, count) }
+            else { available = false }
+        }
+        for record in manual where record.provider == provider && record.timestamp >= start && record.timestamp <= end {
+            guard !engine.project(record.project).ignored else { continue }
+            if let count = record.tokens.total { total = SafeCount.add(total, count) }
+            else { available = false }
+        }
+        return available ? total : nil
+    }
     public func sessionEntries(_ session: SessionSummary) throws -> [UsageEntry] {
         let (rules, adjustments, manual, prices) = try metadata()
         let engine = AnalyticsEngine(query: UsageQuery(), now: .now, rules: rules, adjustments: adjustments, prices: prices)
@@ -43,6 +104,7 @@ extension UsageRepository {
         guard let row = try modelContext.fetch(FetchDescriptor<StoredUsage>(predicate: #Predicate { $0.stableID == id })).first else { throw DataValidationError.missingRecord }
         let record = try JSONDecoder().decode(UsageRecord.self, from: row.payload)
         let final = record.tokens.applying(adjustment.replacement, provider: record.provider)
+        guard final.total != nil else { throw DataValidationError.missingTotal }
         try final.validate(provider: record.provider)
         guard final != record.tokens else { throw DataValidationError.noChange }
         var updated = adjustment

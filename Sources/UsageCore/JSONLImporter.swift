@@ -63,9 +63,13 @@ public enum JSONLImporter {
                 record.projectID = record.projectID ?? project
                 if provider == .codex, let old = pendingUsage,
                    old.eventType != record.eventType,
+                   record.sessionID == old.sessionID,
                    abs(record.timestamp.timeIntervalSince(old.timestamp)) <= 2,
                    record.inputTokens == old.inputTokens, record.outputTokens == old.outputTokens,
-                   record.cachedInputTokens == old.cachedInputTokens, record.totalTokens == old.totalTokens {
+                   record.cachedInputTokens == old.cachedInputTokens,
+                   record.cacheWriteTokens == old.cacheWriteTokens,
+                   record.reasoningTokens == old.reasoningTokens,
+                   record.totalTokens == old.totalTokens {
                     if record.eventType == "token_usage_record" {
                         record.supersedesID = old.id
                         records.removeAll { $0.id == old.id }

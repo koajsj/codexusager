@@ -5,7 +5,7 @@ struct SessionsPage: View {
     @Bindable var model: AppModel
     let width: CGFloat
     @Binding var selection: String?
-    let showDetail: () -> Void
+    let showDetail: (String) -> Void
     var body: some View {
         VStack(spacing: 10) {
             AnalyticsFilters(model: model)
@@ -31,7 +31,8 @@ struct SessionsPage: View {
                     Button("使用预设日期范围") { model.query.from = nil; model.query.through = nil }
                 } label: { Image(systemName: "calendar") }
                 .menuStyle(.borderlessButton).fixedSize().help("日期筛选")
-                Button(action: showDetail) { Image(systemName: "info.circle") }.disabled(selection == nil).help("会话详情")
+                Button { if let selection { showDetail(selection) } } label: { Image(systemName: "info.circle") }
+                    .disabled(selection == nil).help("会话详情")
             }
             if model.analytics.sessions.isEmpty { EmptyStatistics(model: model) }
             else {
@@ -59,8 +60,10 @@ struct SessionsPage: View {
                     TableColumn("总计") { TokenNumber(value: $0.totalTokens, compact: true).font(.caption.weight(.medium)) }.width(75)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
-                    Button("查看统计详情", action: showDetail).disabled(ids.isEmpty)
-                } primaryAction: { _ in showDetail() }
+                    Button("查看统计详情") { if let id = ids.first { showDetail(id) } }.disabled(ids.isEmpty)
+                } primaryAction: { ids in
+                    if let id = ids.first { showDetail(id) }
+                }
             }
             HStack {
                 Text("\(model.analytics.sessions.count) 个会话").font(.caption).foregroundStyle(.secondary)

@@ -26,7 +26,7 @@ struct SessionsPage: View {
                 } label: { Image(systemName: "line.3.horizontal.decrease.circle") }
                 .menuStyle(.borderlessButton).fixedSize().help("项目和模型筛选")
                 Menu {
-                    DatePicker("开始日期", selection: Binding(get: { model.query.from ?? Date() }, set: { model.query.from = Calendar.current.startOfDay(for: $0) }), displayedComponents: .date)
+                    DatePicker("开始日期", selection: Binding(get: { model.query.from ?? Date() }, set: { model.query.from = AnalyticsTimeContext().calendar.startOfDay(for: $0) }), displayedComponents: .date)
                     DatePicker("结束日期", selection: Binding(get: { model.query.through ?? Date() }, set: { model.query.through = $0 }), displayedComponents: .date)
                     Button("使用预设日期范围") { model.query.from = nil; model.query.through = nil }
                 } label: { Image(systemName: "calendar") }

@@ -124,11 +124,11 @@ embed_bridge = phase("app:bridge", "PBXCopyFilesBuildPhase",
                      name="Embed Claude Bridge")
 
 common = {
-    "MACOSX_DEPLOYMENT_TARGET": "14.6",
+    "MACOSX_DEPLOYMENT_TARGET": "15.0",
     "SWIFT_VERSION": "6.0",
     "SWIFT_STRICT_CONCURRENCY": "complete",
     "MARKETING_VERSION": "1.0.0",
-    "CURRENT_PROJECT_VERSION": "1",
+    "CURRENT_PROJECT_VERSION": "2",
     "ENABLE_HARDENED_RUNTIME": "YES",
     "CODE_SIGN_STYLE": "Automatic",
     "USAGE_APP_GROUP": "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared",
@@ -152,7 +152,7 @@ bridge_settings = {
     "PRODUCT_NAME": "ClaudeQuotaBridge", "GENERATE_INFOPLIST_FILE": "YES",
     "SKIP_INSTALL": "YES",
 }
-project_settings = {"SDKROOT": "macosx", "MACOSX_DEPLOYMENT_TARGET": "14.6",
+project_settings = {"SDKROOT": "macosx", "MACOSX_DEPLOYMENT_TARGET": "15.0",
                     "CLANG_ENABLE_MODULES": "YES", "SWIFT_VERSION": "6.0"}
 
 app_configs = config_list("app",

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CryptoKit
 
 @Model public final class StoredUsage {
     @Attribute(.unique) public var stableID: String
@@ -60,7 +61,7 @@ import SwiftData
     public init(_ value: SessionSummary) {
         key = value.id; provider = value.provider.rawValue; sessionID = value.sessionID
         project = value.project; model = value.model; lastSeen = value.lastSeen
-        totalTokens = value.totalTokens; recordCount = value.recordCount
+        totalTokens = Int(clamping: value.totalTokens); recordCount = value.recordCount
     }
 }
 
@@ -160,7 +161,7 @@ public enum UsageSchemaV1: VersionedSchema {
     init(_ value: SessionSummary) {
         key = value.id; provider = value.provider.rawValue; sessionID = value.sessionID
         project = value.project; model = value.model; lastSeen = value.lastSeen
-        totalTokens = value.totalTokens; recordCount = value.recordCount
+        totalTokens = Int(clamping: value.totalTokens); recordCount = value.recordCount
     }
 }
 
@@ -222,7 +223,7 @@ public struct SessionSummary: Sendable, Identifiable {
     public var project: String?
     public var model: String?
     public var lastSeen: Date
-    public var totalTokens: Int
+    public var totalTokens: Int64
     public var recordCount: Int
     public var tokens = TokenValues()
     public var projectName = ""
@@ -231,23 +232,23 @@ public struct SessionSummary: Sendable, Identifiable {
 
 public struct UsageGroup: Sendable, Identifiable {
     public var id: String
-    public var totalTokens: Int
+    public var totalTokens: Int64
     public var count: Int
 }
 
 public struct DailyUsage: Sendable, Identifiable {
     public var id: Date { date }
     public var date: Date
-    public var totalTokens: Int
+    public var totalTokens: Int64
 }
 
 public struct UsageDashboard: Sendable {
     public var recordCount = 0
-    public var totalTokens = 0
-    public var todayTokens = 0
-    public var inputTokens = 0
-    public var outputTokens = 0
-    public var cachedTokens = 0
+    public var totalTokens: Int64 = 0
+    public var todayTokens: Int64 = 0
+    public var inputTokens: Int64 = 0
+    public var outputTokens: Int64 = 0
+    public var cachedTokens: Int64 = 0
     public var sessions: [SessionSummary] = []
     public var projects: [UsageGroup] = []
     public var models: [UsageGroup] = []
@@ -297,7 +298,8 @@ public struct SourceCenterSummary: Sendable {
            cursor.offset == cursor.fileSize,
            (attrs[.size] as? NSNumber)?.uint64Value == cursor.fileSize,
            attrs[.modificationDate] as? Date == cursor.modifiedAt,
-           "\((attrs[.systemNumber] as? NSNumber)?.stringValue ?? ""):\((attrs[.systemFileNumber] as? NSNumber)?.stringValue ?? "")" == cursor.fileIdentity { return false }
+           "\((attrs[.systemNumber] as? NSNumber)?.stringValue ?? ""):\((attrs[.systemFileNumber] as? NSNumber)?.stringValue ?? "")" == cursor.fileIdentity,
+           try matchingPrefix(cursor, at: url) { return false }
         var changed = false
         repeat {
             let result = try JSONLImporter.scan(url: url, provider: provider, cursor: cursor, maxRecords: 512, isCancelled: { Task.isCancelled })
@@ -342,6 +344,17 @@ public struct SourceCenterSummary: Sendable {
             if result.reachedEnd { break }
         } while true
         return changed
+    }
+
+    private func matchingPrefix(_ cursor: ImportCursor, at url: URL) throws -> Bool {
+        guard let expected = cursor.prefixDigest, let length = cursor.prefixLength,
+              (0...4096).contains(length) else { return false }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: length) ?? Data()
+        guard data.count == length else { return false }
+        let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return actual == expected
     }
 
     public func recordFailure(path: String, provider: ProviderID) throws {
@@ -390,10 +403,27 @@ public struct SourceCenterSummary: Sendable {
 
     public func saveAccount(_ account: AccountProfile) throws {
         let id = account.provider.rawValue
-        let data = try JSONEncoder().encode(account)
+        var cached = account
+        cached.identity = nil
+        let data = try JSONEncoder().encode(cached)
         if let row = try modelContext.fetch(FetchDescriptor<StoredAccount>(predicate: #Predicate { $0.provider == id })).first { row.payload = data }
         else { modelContext.insert(StoredAccount(provider: id, payload: data)) }
         try modelContext.save()
+    }
+
+    /// Account identity is needed only in memory for binding live quota to its owner.
+    public func scrubStoredAccountIdentities() throws {
+        var changed = false
+        for row in try modelContext.fetch(FetchDescriptor<StoredAccount>()) {
+            var cached = try JSONDecoder().decode(AccountProfile.self, from: row.payload)
+            guard cached.identity != nil else { continue }
+            cached.identity = nil
+            row.payload = try JSONEncoder().encode(cached)
+            changed = true
+        }
+        if changed {
+            do { try modelContext.save() } catch { modelContext.rollback(); throw error }
+        }
     }
 
     public func saveQuota(_ snapshot: QuotaSnapshot) throws {

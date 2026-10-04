@@ -12,14 +12,16 @@ public struct BackupSettings: Codable, Sendable {
     public var notifyCodex10: Bool
     public var notifyCodexReset: Bool
     public var notifyClaude25: Bool
+    public var refreshPolicy: String?
     public var welcomeCompleted: Bool
     public init(appearance: String, menuSource: String, menuStyle: String, menuValue: String,
                 refreshAutomatically: Bool, hidePaths: Bool, notifyCodex25: Bool, notifyCodex10: Bool,
-                notifyCodexReset: Bool, notifyClaude25: Bool, welcomeCompleted: Bool) {
+                notifyCodexReset: Bool, notifyClaude25: Bool, welcomeCompleted: Bool, refreshPolicy: String? = nil) {
         self.appearance = appearance; self.menuSource = menuSource; self.menuStyle = menuStyle
         self.menuValue = menuValue; self.refreshAutomatically = refreshAutomatically; self.hidePaths = hidePaths
         self.notifyCodex25 = notifyCodex25; self.notifyCodex10 = notifyCodex10
         self.notifyCodexReset = notifyCodexReset; self.notifyClaude25 = notifyClaude25
+        self.refreshPolicy = refreshPolicy
         self.welcomeCompleted = welcomeCompleted
     }
 }
@@ -27,6 +29,9 @@ public struct BackupSettings: Codable, Sendable {
 struct BackupDocument: Codable, Sendable {
     var format = "dev.codexusager.backup"
     var version = 1
+    // Optional on read to preserve backups exported before release metadata was added.
+    var schemaVersion: Int? = 1
+    var appVersion: String? = nil
     var createdAt: Date = .now
     var settings: BackupSettings
     var projectRules: [ProjectRule]
@@ -86,9 +91,14 @@ enum BackupValidation {
               root["format"] as? String == "dev.codexusager.backup" else { throw BackupError.invalidFormat }
         guard let version = root["version"] as? NSNumber, version.intValue == 1,
               version.doubleValue == 1 else { throw BackupError.unsupportedVersion }
-        try keys(root, allowed: ["format", "version", "createdAt", "settings", "projectRules", "adjustments", "manualUsage", "quotaHistory", "modelPrices"])
+        if let schema = root["schemaVersion"] {
+            guard let number = schema as? NSNumber, number.doubleValue == version.doubleValue else {
+                throw BackupError.unsupportedVersion
+            }
+        }
+        try keys(root, allowed: ["format", "version", "schemaVersion", "appVersion", "createdAt", "settings", "projectRules", "adjustments", "manualUsage", "quotaHistory", "modelPrices"])
         guard let settings = root["settings"] as? [String: Any] else { throw BackupError.invalidFormat }
-        try keys(settings, allowed: ["appearance", "menuSource", "menuStyle", "menuValue", "refreshAutomatically", "hidePaths", "notifyCodex25", "notifyCodex10", "notifyCodexReset", "notifyClaude25", "welcomeCompleted"])
+        try keys(settings, allowed: ["appearance", "menuSource", "menuStyle", "menuValue", "refreshAutomatically", "hidePaths", "notifyCodex25", "notifyCodex10", "notifyCodexReset", "notifyClaude25", "welcomeCompleted", "refreshPolicy"])
         for (name, allowed, tokens) in [
             ("projectRules", Set(["path", "displayName", "mergedInto", "ignored"]), [String]()),
             ("adjustments", Set(["id", "recordID", "original", "replacement", "reason", "note", "updatedAt", "provider"]), ["original", "replacement"]),
@@ -110,12 +120,15 @@ enum BackupValidation {
         guard Set(object.keys).isSubset(of: allowed) else { throw BackupError.invalidFormat }
     }
     static func validate(_ document: BackupDocument) throws {
-        guard document.format == "dev.codexusager.backup", document.version == 1 else { throw BackupError.unsupportedVersion }
+        guard document.format == "dev.codexusager.backup", document.version == 1,
+              document.schemaVersion == nil || document.schemaVersion == document.version else { throw BackupError.unsupportedVersion }
+        guard text(document.appVersion, limit: 64) else { throw BackupError.invalidValues }
         let settings = document.settings
         guard ["system", "light", "dark"].contains(settings.appearance),
               ["codex", "claude", "automatic"].contains(settings.menuSource),
               ["dualQuota", "quotaCountdown", "minimal", "icon"].contains(settings.menuStyle),
               ["remaining", "used"].contains(settings.menuValue), validDate(document.createdAt) else { throw BackupError.invalidValues }
+        guard settings.refreshPolicy.map({ RefreshPolicy(rawValue: $0) != nil }) ?? true else { throw BackupError.invalidValues }
         let counts = [document.projectRules.count, document.adjustments.count, document.manualUsage.count,
                       document.quotaHistory.count, document.modelPrices.count]
         guard counts.allSatisfy({ $0 <= 100_000 }), SafeCount.sum(counts) <= 200_000 else { throw BackupError.oversized }
@@ -189,7 +202,8 @@ public actor BackupService {
     public func export(to destination: URL, settings: BackupSettings) async throws {
         let scoped = destination.startAccessingSecurityScopedResource()
         defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
-        let document = try await repository.backupDocument(settings: settings)
+        var document = try await repository.backupDocument(settings: settings)
+        document.appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
         try BackupValidation.validate(document)
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = [.sortedKeys]

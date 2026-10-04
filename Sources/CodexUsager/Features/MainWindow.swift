@@ -58,9 +58,18 @@ struct MainWindow: View {
                     if let error = model.storageError ?? model.operationError {
                         HStack {
                             Image(systemName: "exclamationmark.circle")
-                            Text(error).lineLimit(2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(error).lineLimit(2)
+                                if let recovery = model.storageError != nil
+                                    ? model.errorCenter.issue(for: .storage)?.recoverySuggestion
+                                    : (model.errorCenter.issue(for: .operation) ??
+                                       model.errorCenter.issue(for: .session) ??
+                                       model.errorCenter.issue(for: .export))?.recoverySuggestion {
+                                    Text(recovery).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                            }
                             Spacer(minLength: 4)
-                            if model.storageError == nil { Button("关闭") { model.operationError = nil } }
+                            if model.storageError == nil { Button("关闭") { model.dismissOperationError() } }
                         }
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -75,7 +84,9 @@ struct MainWindow: View {
                     }
                     ToolbarItem(placement: .primaryAction) {
                         Button { model.refreshData() } label: {
-                            Image(systemName: "arrow.clockwise")
+                            if model.isRefreshing || model.isImporting {
+                                ProgressView().controlSize(.small)
+                            } else { Image(systemName: "arrow.clockwise") }
                         }
                         .help("刷新数据")
                         .disabled(model.isRefreshing || model.isImporting)
@@ -121,7 +132,7 @@ struct MainWindow: View {
             model.openMainWindow = { openWindow(id: "main") }
             model.start()
         }
-        .sheet(isPresented: Binding(get: { !model.welcomeCompleted }, set: { _ in })) {
+        .sheet(isPresented: Binding(get: { model.hasCheckedCodexAccount && !model.welcomeCompleted }, set: { _ in })) {
             WelcomeView(model: model)
         }
         .onChange(of: sessionSelection) { _, id in

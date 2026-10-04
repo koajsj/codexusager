@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppPreferenceKey: String {
-    case appearance, menuSource, menuStyle, menuValue, refreshAutomatically, hidePaths
+    case refreshPolicy, appearance, menuSource, menuStyle, menuValue, refreshAutomatically, hidePaths
     case notifyCodex25, notifyCodex10, notifyCodexReset, notifyClaude25, welcomeCompleted
 }
 

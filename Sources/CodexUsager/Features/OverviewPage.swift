@@ -39,7 +39,12 @@ struct OverviewPage: View {
                     if model.hasIndexed, model.analytics.today.total != nil || model.analytics.past24Hours.contains(where: { $0.tokens > 0 }) {
                         TrendChart(points: model.analytics.past24Hours, hourly: true)
                     } else {
-                        Text(model.isImporting ? "正在读取本地会话…" : "暂无用量记录").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 150)
+                        HStack(spacing: 8) {
+                            if model.isImporting || model.isAggregating { ProgressView().controlSize(.small) }
+                            Text(model.isImporting || model.isAggregating ? "正在读取本地会话…" : "暂无用量记录")
+                        }
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 150)
                     }
                 }
                 DashboardGroup {
@@ -68,7 +73,7 @@ struct OverviewPage: View {
                             Image(systemName: "server.rack").foregroundStyle(.secondary)
                             Text(provider.title); Spacer(); StatusBadge(health: model.status(provider).health)
                         }
-                        Divider()
+                        if provider != ProviderID.allCases.last { Divider() }
                     }
                     HStack {
                         Image(systemName: "externaldrive").foregroundStyle(.secondary)
@@ -81,6 +86,27 @@ struct OverviewPage: View {
                     }
                 }
             }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("最近使用").font(.headline)
+                let sessions = Array(model.analytics.sessions.prefix(5))
+                if sessions.isEmpty {
+                    Text(model.isImporting ? "正在索引本地会话…" : "暂无会话记录")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(sessions) { session in
+                    HStack(spacing: 10) {
+                        Text(session.lastSeen, format: .dateTime.month().day().hour().minute())
+                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                        Text("\(session.provider.title) · \(session.projectName)")
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        TokenNumber(value: session.tokens.total, compact: true).font(.caption).monospacedDigit()
+                    }
+                    if session.id != sessions.last?.id { Divider() }
+                }
+                Text("当前统计范围内最近 5 个会话；Token 为会话累计值。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }.padding(.vertical, 4)
             QuotaInsights(model: model)
             }
         }
@@ -140,12 +166,23 @@ struct ProviderPanel: View {
                     QuotaRow(window: window, isStale: quota.isStale)
                     if index < windows.count - 1 { Divider().padding(.vertical, 2) }
                 }
-                if quota.isStale { Label("最后已知额度 · 数据已过期", systemImage: "clock").font(.caption2).foregroundStyle(.orange) }
+                if quota.isStale {
+                    Label("最后已知额度 · 数据已过期", systemImage: "clock").font(.caption2).foregroundStyle(.orange)
+                    if let issue = status.issue {
+                        Text(issue.userMessage).font(.caption).foregroundStyle(.orange)
+                    }
+                }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(status.quotaAvailability.localizedLabel, systemImage: "gauge").font(.subheadline).foregroundStyle(.secondary)
+                    if let issue = status.issue {
+                        Text(issue.userMessage).font(.caption).foregroundStyle(.orange).lineLimit(2)
+                    }
                     if status.health == .signedOut || status.health == .notInstalled {
-                        Button("查看官方安装 / 登录说明") { model.openLoginGuide(status.id) }.buttonStyle(.link).font(.caption)
+                        Button(status.id == .codex && status.health != .notInstalled ? "登录 ChatGPT" : "查看官方安装 / 登录说明") {
+                            if status.id == .codex && status.health != .notInstalled { model.loginChatGPT() }
+                            else { model.openLoginGuide(status.id) }
+                        }.buttonStyle(.link).font(.caption)
                     } else if status.id == .claude {
                         Text("可在数据来源中配置官方 status-line 额度桥接。")
                             .font(.caption).foregroundStyle(.secondary)

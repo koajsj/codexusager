@@ -44,9 +44,17 @@ public enum ClaudeQuotaBridge {
         return true
     }
     public static func read() throws -> QuotaSnapshot? {
-        let url = location()
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let handle = try FileHandle(forReadingFrom: url)
+        try read(at: location())
+    }
+    static func read(at url: URL) throws -> QuotaSnapshot? {
+        let handle: FileHandle
+        do {
+            guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                throw ProviderError.invalidResponse
+            }
+            handle = try FileHandle(forReadingFrom: url)
+        }
+        catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return nil }
         defer { try? handle.close() }
         let data = try handle.read(upToCount: 64 * 1024 + 1) ?? Data()
         guard data.count <= 64 * 1024 else { throw ProviderError.invalidResponse }

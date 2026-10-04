@@ -11,23 +11,24 @@ struct AnalyticsEngine {
     private var sessions: [String: SessionSummary] = [:]
     private var projectRows: [String: ProjectSummary] = [:]
     private var projectSessions: [String: Set<String>] = [:]
-    private var projectDays: [String: [Date: Int]] = [:]
+    private var projectDays: [String: [Date: Int64]] = [:]
     private var modelRows: [String: ModelSummary] = [:]
     private var modelSessions: [String: Set<String>] = [:]
     private var modelProjects: [String: Set<String>] = [:]
-    private var modelDays: [String: [Date: Int]] = [:]
+    private var modelDays: [String: [Date: Int64]] = [:]
     private var modelCosts: [String: Double] = [:]
     private var unpricedModels: Set<String> = []
-    private var days: [Date: Int] = [:]
-    private var hours: [Date: Int] = [:]
-    private var providerTokens: [ProviderID: Int] = [:]
+    private var days: [Date: Int64] = [:]
+    private var hours: [Date: Int64] = [:]
+    private var providerTokens: [ProviderID: Int64] = [:]
     private var providerSessions: [ProviderID: Set<String>] = [:]
     private var availableModels: Set<String> = []
-    private var todayProjects: [String: (name: String, tokens: Int)] = [:]
-    private var todayModels: [String: (provider: ProviderID, name: String, tokens: Int)] = [:]
+    private var todayProjects: [String: (name: String, tokens: Int64)] = [:]
+    private var todayModels: [String: (provider: ProviderID, name: String, tokens: Int64)] = [:]
 
-    init(query: UsageQuery, now: Date, rules: [ProjectRule], adjustments: [UsageAdjustment], prices: [ModelPrice]) {
-        self.query = query; self.now = now; calendar = .current
+    init(query: UsageQuery, now: Date, rules: [ProjectRule], adjustments: [UsageAdjustment], prices: [ModelPrice],
+         timeContext: AnalyticsTimeContext = AnalyticsTimeContext()) {
+        self.query = query; self.now = now; calendar = timeContext.calendar
         self.rules = rules.reduce(into: [:]) { $0[$1.path] = $1 }
         self.adjustments = adjustments.reduce(into: [:]) { $0[$1.recordID] = $1 }
         self.prices = prices.reduce(into: [:]) { $0[$1.id] = $1 }
@@ -72,7 +73,7 @@ struct AnalyticsEngine {
               query.provider == nil || query.provider == entry.provider,
               query.project == nil || query.project == entry.project,
               query.model == nil || query.model == entry.model else { return false }
-        let start = query.from ?? query.period.start(now: now)
+        let start = query.from ?? query.period.start(now: now, calendar: calendar)
         if let start, entry.timestamp < start { return false }
         if let end = query.through, entry.timestamp >= (calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: end)) ?? end) { return false }
         let text = query.search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -117,7 +118,7 @@ struct AnalyticsEngine {
         result.tokens.accumulate(entry.final); result.recordCount = SafeCount.add(result.recordCount, 1)
         let values = entry.final
         if let input = values.input {
-            let exclusive = entry.provider == .codex
+            let exclusive = entry.provider.inputIncludesCache
                 ? input - min(input, SafeCount.add(values.cacheRead ?? 0, values.cacheWrite ?? 0)) : input
             result.composition[.input] = SafeCount.add(result.composition[.input] ?? 0, exclusive)
         }
@@ -130,8 +131,8 @@ struct AnalyticsEngine {
         if let output = values.output {
             result.composition[.output] = SafeCount.add(result.composition[.output] ?? 0, output)
         }
-        if entry.isManual { result.manualCount += 1 }
-        if entry.adjustment != nil { result.adjustedCount += 1 }
+        if entry.isManual { result.manualCount = SafeCount.add(result.manualCount, 1) }
+        if entry.adjustment != nil { result.adjustedCount = SafeCount.add(result.adjustedCount, 1) }
         days[day] = SafeCount.add(days[day] ?? 0, total)
         providerTokens[entry.provider] = SafeCount.add(providerTokens[entry.provider] ?? 0, total)
         providerSessions[entry.provider, default: []].insert(sessionKey)
@@ -145,9 +146,10 @@ struct AnalyticsEngine {
         let modelName = entry.model ?? "unknown", modelKey = "\(entry.provider.rawValue):\(modelName)"
         var model = modelRows[modelKey] ?? ModelSummary(name: modelName, provider: entry.provider, tokens: TokenValues(), sessionCount: 0, projectCount: 0, trend: [], estimatedCost: nil)
         model.tokens.accumulate(entry.final); modelRows[modelKey] = model
-        if let price = prices[modelKey], let cost = price.estimate(entry.final),
-           (modelCosts[modelKey] ?? 0) + cost < Double.greatestFiniteMagnitude {
-            modelCosts[modelKey, default: 0] += cost
+        if let price = prices[modelKey], let cost = price.estimate(entry.final) {
+            let next = (modelCosts[modelKey] ?? 0) + cost
+            if next.isFinite { modelCosts[modelKey] = next }
+            else { unpricedModels.insert(modelKey) }
         } else { unpricedModels.insert(modelKey) }
         modelSessions[modelKey, default: []].insert(sessionKey); modelProjects[modelKey, default: []].insert(p.key)
         var modelDay = modelDays[modelKey] ?? [:]
@@ -174,7 +176,7 @@ struct AnalyticsEngine {
             row.estimatedCost = unpricedModels.contains(row.id) ? nil : modelCosts[row.id]
             return row
         }.sorted { ($0.tokens.total ?? 0) > ($1.tokens.total ?? 0) }
-        if query.from == nil, query.through == nil, let start = query.period.start(now: now) {
+        if query.from == nil, query.through == nil, let start = query.period.start(now: now, calendar: calendar) {
             var date = start
             let end = calendar.startOfDay(for: now)
             var filled: [TrendPoint] = []
@@ -195,7 +197,7 @@ struct AnalyticsEngine {
         result.generatedAt = now
         return result
     }
-    private func points(_ values: [Date: Int]) -> [TrendPoint] {
+    private func points(_ values: [Date: Int64]) -> [TrendPoint] {
         values.keys.sorted().map { TrendPoint(date: $0, tokens: values[$0] ?? 0) }
     }
 }

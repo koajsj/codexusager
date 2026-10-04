@@ -50,3 +50,53 @@ import Testing
     #expect(second.records.count == 1)
     #expect(second.records.first?.timestamp.timeIntervalSince1970 == 1790899200.123)
 }
+
+@Test func sameSizeSameModificationDateRewriteIsReindexed() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("session.jsonl")
+    func line(_ output: Int) -> Data {
+        Data("""
+        {"type":"assistant","sessionId":"s","timestamp":"2026-10-02T00:00:00Z","message":{"id":"m","usage":{"input_tokens":1,"output_tokens":\(output)}}}
+
+        """.utf8)
+    }
+    try line(1).write(to: source)
+    try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000_000_000)], ofItemAtPath: source.path)
+    let repository = UsageRepository(modelContainer: try UsageStorage.makeContainer(url: directory.appendingPathComponent("usage.store")))
+    try await repository.importFile(source, provider: .claude)
+    let modified = try #require(FileManager.default.attributesOfItem(atPath: source.path)[.modificationDate] as? Date)
+    let handle = try FileHandle(forWritingTo: source)
+    try handle.write(contentsOf: line(2)); try handle.close()
+    try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: source.path)
+    let attrs = try FileManager.default.attributesOfItem(atPath: source.path)
+    #expect(attrs[.modificationDate] as? Date == modified)
+    #expect((attrs[.size] as? NSNumber)?.uint64Value == UInt64(line(1).count))
+    #expect(try await repository.importFile(source, provider: .claude))
+    #expect(try await repository.dashboard().totalTokens == 3)
+}
+
+@Test func accountCacheDoesNotPersistEmailIdentity() async throws {
+    let container = try UsageStorage.makeContainer(inMemory: true)
+    let repository = UsageRepository(modelContainer: container)
+    try await repository.saveAccount(AccountProfile(provider: .codex,
+        identity: "private-user@example.invalid", rawPlanType: "plus"))
+    let rows = try ModelContext(container).fetch(FetchDescriptor<StoredAccount>())
+    let profile = try #require(rows.first).payload
+    let decoded = try JSONDecoder().decode(AccountProfile.self, from: profile)
+    #expect(decoded.identity == nil)
+    #expect(decoded.rawPlanType == "plus")
+}
+
+@Test func legacyAccountCacheIdentityIsScrubbed() async throws {
+    let container = try UsageStorage.makeContainer(inMemory: true)
+    let context = ModelContext(container)
+    let legacy = AccountProfile(provider: .claude, identity: "old@example.invalid", rawPlanType: "pro")
+    context.insert(StoredAccount(provider: "claude", payload: try JSONEncoder().encode(legacy)))
+    try context.save()
+    let repository = UsageRepository(modelContainer: container)
+    try await repository.scrubStoredAccountIdentities()
+    let row = try #require(ModelContext(container).fetch(FetchDescriptor<StoredAccount>()).first)
+    #expect(try JSONDecoder().decode(AccountProfile.self, from: row.payload).identity == nil)
+}

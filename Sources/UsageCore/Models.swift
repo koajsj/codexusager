@@ -33,6 +33,12 @@ public struct QuotaWindow: Codable, Identifiable, Sendable, Equatable {
     public var fetchedAt: Date
     public var source: String
 
+    public var hasValidPercentages: Bool {
+        usedPercent.isFinite && remainingPercent.isFinite &&
+        (0...100).contains(usedPercent) && (0...100).contains(remainingPercent) &&
+        abs(usedPercent + remainingPercent - 100) < 0.01
+    }
+
     public func isAwaitingRefresh(at now: Date) -> Bool {
         guard let resetsAt else { return false }
         return now >= resetsAt
@@ -53,9 +59,17 @@ public struct QuotaState: Sendable {
     public private(set) var isStale = false
     public private(set) var lastError: String?
     public init() {}
-    public mutating func apply(_ fresh: QuotaSnapshot) { snapshot = fresh; isStale = false; lastError = nil }
+    public mutating func apply(_ fresh: QuotaSnapshot) {
+        var normalized = fresh
+        normalized.windows = fresh.windows.filter(\.hasValidPercentages)
+        snapshot = normalized
+        isStale = normalized.windows.count != fresh.windows.count
+        lastError = isStale ? "invalid_quota_percent" : nil
+    }
     public mutating func markFailure(_ reason: String) { isStale = true; lastError = reason }
     public mutating func merge(_ sparse: QuotaSnapshot) {
+        // An empty notification is not proof that the previous windows are still current.
+        guard !sparse.windows.isEmpty else { markFailure("quota_unavailable"); return }
         guard var current = snapshot else { apply(sparse); return }
         if let incoming = sparse.accountID, let existing = current.accountID, incoming != existing { apply(sparse); return }
         var windows: [String: QuotaWindow] = [:]
@@ -79,7 +93,7 @@ public struct QuotaState: Sendable {
 
 public enum QuotaDisplayPolicy {
     public static func menuWindows(from windows: [QuotaWindow]) -> [QuotaWindow] {
-        Array(windows.sorted {
+        Array(windows.filter(\.hasValidPercentages).sorted {
             let lhs = ($0.limitID == "codex" ? 0 : 1, $0.durationMinutes ?? Int.max, $0.limitID)
             let rhs = ($1.limitID == "codex" ? 0 : 1, $1.durationMinutes ?? Int.max, $1.limitID)
             return lhs < rhs
@@ -96,8 +110,8 @@ public struct WindowDimensions: Equatable, Sendable {
 public enum WindowSizing {
     public static let minimum = WindowDimensions(width: 540, height: 390)
     public static func initial(visible: WindowDimensions) -> WindowDimensions {
-        WindowDimensions(width: min(720, max(minimum.width, visible.width * 0.5)),
-                         height: min(500, max(minimum.height, visible.height * 0.55)))
+        WindowDimensions(width: min(720, max(minimum.width, (visible.width * 0.5).rounded())),
+                         height: min(500, max(minimum.height, (visible.height * 0.55).rounded())))
     }
 }
 
@@ -110,12 +124,12 @@ public struct UsageRecord: Codable, Identifiable, Sendable {
     public var sessionID: String
     public var projectID: String?
     public var model: String?
-    public var inputTokens: Int
-    public var cachedInputTokens: Int
-    public var cacheWriteTokens: Int
-    public var outputTokens: Int
-    public var reasoningTokens: Int
-    public var totalTokens: Int
+    public var inputTokens: Int64
+    public var cachedInputTokens: Int64
+    public var cacheWriteTokens: Int64
+    public var outputTokens: Int64
+    public var reasoningTokens: Int64
+    public var totalTokens: Int64
     public var sourceFile: String
     public var importedAt: Date
     public var eventType: String

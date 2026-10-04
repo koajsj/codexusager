@@ -13,7 +13,7 @@ enum WidgetSource: String, AppEnum {
 struct QuotaConfiguration: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "额度来源"
     static let description = IntentDescription("选择 Widget 中显示的 Provider。")
-    @Parameter(title: "来源") var source: WidgetSource
+    @Parameter(title: "来源") var source: WidgetSource?
     init() { source = .automatic }
 }
 
@@ -40,12 +40,13 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
         let now = Date()
         let providers = (WidgetSnapshotStore.read()?.providers ?? []).map { provider in
             var provider = provider
-            provider.stale = provider.stale || (provider.updatedAt.map { now.timeIntervalSince($0) > 300 } ?? true)
+            provider.stale = provider.stale || (provider.updatedAt.map { now.timeIntervalSince($0) > QuotaFreshness.maximumAge } ?? true)
             if provider.windows.contains(where: { $0.reset.map { $0 <= now } ?? false }) { provider.stale = true }
             return provider
         }
         let selected: WidgetProviderSnapshot?
-        switch configuration.source {
+        let requested = configuration.source ?? .automatic
+        switch requested {
         case .codex: selected = providers.first { $0.id == "codex" }
         case .claude: selected = providers.first { $0.id == "claude" }
         case .automatic:
@@ -53,7 +54,7 @@ struct QuotaTimelineProvider: AppIntentTimelineProvider {
                 ?? providers.first { !$0.windows.isEmpty }
                 ?? providers.first { $0.id == "codex" }
         }
-        return QuotaEntry(date: .now, provider: selected, requested: configuration.source)
+        return QuotaEntry(date: .now, provider: selected, requested: requested)
     }
 }
 

@@ -42,17 +42,17 @@ public enum UsageLineDecoder {
             sourceID = message["id"] as? String
             model = message["model"] as? String
         }
-        func parsedCount(_ key: String) -> Int? {
+        func parsedCount(_ key: String) -> Int64? {
             guard let number = usage[key] as? NSNumber,
                   CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
-            guard let value = Int(number.stringValue), value >= 0 else { return nil }
+            guard let value = Int64(number.stringValue), value >= 0 else { return nil }
             return value
         }
         let countKeys = ["input_tokens", "cached_input_tokens", "cache_read_input_tokens",
                          "cache_write_input_tokens", "cache_creation_input_tokens",
                          "output_tokens", "reasoning_output_tokens", "total_tokens"]
         guard countKeys.allSatisfy({ usage[$0] == nil || parsedCount($0) != nil }) else { return nil }
-        func count(_ key: String) -> Int { parsedCount(key) ?? 0 }
+        func count(_ key: String) -> Int64 { parsedCount(key) ?? 0 }
         let input = count("input_tokens")
         let cached = provider == .codex ? count("cached_input_tokens") : count("cache_read_input_tokens")
         let cacheWrite = provider == .codex ? count("cache_write_input_tokens") : count("cache_creation_input_tokens")

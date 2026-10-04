@@ -102,8 +102,17 @@ struct SourcesPage: View {
             LabeledContent("额度", value: quota.isStale ? "数据已过期 · 最后已知值" : status.quotaAvailability.localizedLabel)
             LabeledContent("最近额度更新", value: (quota.snapshot?.fetchedAt)
                 .map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "尚无额度数据")
+            if quota.isStale, let source = quota.snapshot?.windows.first?.source {
+                LabeledContent("最近成功来源", value: source)
+            }
             LabeledContent("Session 数据", value: model.sourceSessionStatus(id))
             if let version = status.version { LabeledContent("版本", value: version) }
+            if let issue = status.issue {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(issue.userMessage)
+                    Text(issue.recoverySuggestion)
+                }.font(.caption).foregroundStyle(.orange)
+            }
             if status.health == .offline {
                 Text("来源连接失败。请确认本机工具可用后手动刷新；保留的额度不视为实时数据。")
                     .font(.caption).foregroundStyle(.orange)
@@ -114,13 +123,10 @@ struct SourcesPage: View {
                 Text("当前工具版本不支持额度读取。请查看官方版本说明。")
                     .font(.caption).foregroundStyle(.orange)
             }
+            if id == .codex { ChatGPTConnectionControls(model: model) }
             Button("官方安装 / 登录说明") { model.openLoginGuide(id) }.buttonStyle(.link)
             if id == .claude {
                 Divider()
-                if status.health == .parseError {
-                    Text("本地 Claude 额度快照无法解析。请在 Claude Code 中触发一次新的 status-line 更新。")
-                        .font(.caption).foregroundStyle(.orange)
-                }
                 Text("Claude 额度来自官方 status-line 字段。未配置桥接或来源未返回时显示不可用。")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("复制配置后，手动合并到 Claude settings.json。已有 statusLine 时请保留原命令并串接此 helper；App 不会覆盖配置。")

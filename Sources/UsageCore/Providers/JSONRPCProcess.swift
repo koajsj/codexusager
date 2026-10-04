@@ -29,7 +29,7 @@ public actor JSONRPCProcess {
         if process?.isRunning == true { return }
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["app-server", "--listen", "stdio://", "-c", "analytics.enabled=false"]
+        process.arguments = ["app-server", "--listen", "stdio://", "-c", "analytics.enabled=false", "-c", #"cli_auth_credentials_store="keyring""#]
         process.environment = ExecutableLocator.environment(for: executable)
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let stdin = Pipe(), stdout = Pipe()
@@ -117,6 +117,7 @@ public actor JSONRPCProcess {
         output?.readabilityHandler = nil
         try? input?.close(); input = nil
         if process?.isRunning == true { process?.terminate() }
+        try? output?.close()
         process = nil; output = nil; buffer.removeAll()
         for id in Array(pending.keys) { finish(id, result: .failure(ProviderError.disconnected)) }
     }

@@ -1,6 +1,6 @@
 # CodexUsager v1.0.0
 
-> 发布正文草稿。正式 DMG 尚未完成签名、公证和安装验证；通过 [发布门槛](RELEASE.md) 后再用于 GitHub Release。
+> 发布正文模板。当前流程生成未签名、未公证的预览 DMG；安装启动、Gatekeeper 与 Widget 共享容器仍需运行验证。签名发行的门槛见 [RELEASE.md](RELEASE.md)。
 
 CodexUsager 是一个原生 macOS AI Coding 用量伴侣，在本机汇总 Codex 和 Claude Code 的额度与使用情况。
 
@@ -19,14 +19,14 @@ CodexUsager 采用 local-first 方式处理用量数据，不保存 Prompt、AI 
 
 ## 系统要求
 
-- macOS Sonoma 14.6 或更新版本。
+- macOS Sequoia 15.0 或更新版本。
 - Apple Silicon 或 Intel Mac。
 - 使用对应功能时，需在本机安装并登录 Codex 或 Claude Code。
 
 ## 安装
 
-1. 下载 `CodexUsager-1.0.0.dmg`。
+1. 下载 `CodexUsager-v1.0.0.dmg`。
 2. 打开 DMG，将 `CodexUsager.app` 拖入 `Applications`。
 3. 首次启动时按 macOS 的安全提示完成打开操作。
 
-可使用随附的 `CodexUsager-1.0.0.dmg.sha256` 校验下载文件。
+可使用随附的 `CodexUsager-v1.0.0.dmg.sha256` 校验下载文件。当前预览包未签名、未公证，macOS 可能阻止打开；Widget 共享容器能力不保证可用。

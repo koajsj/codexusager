@@ -15,8 +15,11 @@ public enum JSONLImporter {
     /// The UI importer caps each batch at 512 normalized records. Source contents and oversized
     /// lines are never retained. An unterminated final line is retried on the next scan.
     public static func scan(url: URL, provider: ProviderID, cursor: ImportCursor?, chunkSize: Int = 64 * 1024,
-                            maxRecords: Int = .max, maxLineBytes: Int = 1024 * 1024,
+                            maxRecords: Int = 512, maxLineBytes: Int = 1024 * 1024,
                             isCancelled: () -> Bool = { false }) throws -> ScanResult {
+        let readChunkBytes = min(1024 * 1024, max(256, chunkSize))
+        let batchLimit = min(512, max(1, maxRecords))
+        let lineLimit = min(1024 * 1024, max(1, maxLineBytes))
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
         let modified = attrs[.modificationDate] as? Date ?? .distantPast
@@ -88,7 +91,7 @@ public enum JSONLImporter {
 
         scan: while readPosition < size {
             if isCancelled() { throw CancellationError() }
-            let chunk = try handle.read(upToCount: min(max(256, chunkSize), Int(min(UInt64(Int.max), size - readPosition)))) ?? Data()
+            let chunk = try handle.read(upToCount: min(readChunkBytes, Int(min(UInt64(Int.max), size - readPosition)))) ?? Data()
             if chunk.isEmpty { break }
             var start = chunk.startIndex
             while start < chunk.endIndex {
@@ -96,7 +99,7 @@ public enum JSONLImporter {
                 let end = chunk[start...].firstIndex(of: 10) ?? chunk.endIndex
                 let segment = chunk[start..<end]
                 if !discarding {
-                    if line.count + segment.count <= maxLineBytes { line.append(segment); peak = max(peak, line.count + chunk.count) }
+                    if line.count + segment.count <= lineLimit { line.append(segment); peak = max(peak, line.count + chunk.count) }
                     else { discarding = true; line.removeAll(keepingCapacity: false); malformed += 1 }
                 }
                 readPosition += UInt64(segment.count)
@@ -106,7 +109,7 @@ public enum JSONLImporter {
                     line.removeAll(keepingCapacity: true)
                     discarding = false
                     completeOffset = readPosition
-                    if records.count >= max(1, maxRecords) { reachedEnd = readPosition >= size; break scan }
+                    if records.count >= batchLimit { reachedEnd = readPosition >= size; break scan }
                     start = end + 1
                 } else { start = end }
             }

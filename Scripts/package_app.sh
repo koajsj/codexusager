@@ -2,49 +2,73 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONFIG="${1:-debug}"
-ARCHES=("$(uname -m)")
-if [[ "${2:-}" == "--universal" ]]; then ARCHES=(arm64 x86_64); fi
-if [[ "$CONFIG" != "debug" && "$CONFIG" != "release" ]]; then
-  echo "Usage: Scripts/package_app.sh [debug|release] [--universal]" >&2; exit 2
-fi
-cd "$ROOT"
-for ARCH in "${ARCHES[@]}"; do
-  swift build --configuration "$CONFIG" --triple "${ARCH}-apple-macosx14.6" --product CodexUsager
-  swift build --configuration "$CONFIG" --triple "${ARCH}-apple-macosx14.6" --product ClaudeQuotaBridge
-done
+CONFIG="${1:-release}"
+if [[ $# -gt 0 ]]; then shift; fi
+case "$CONFIG" in
+  debug) CONFIG=Debug ;;
+  release) CONFIG=Release ;;
+  *) echo "用法：Scripts/package_app.sh [debug|release] [--universal] [--unsigned] [--team TEAM_ID] [--output CodexUsager.app]" >&2; exit 2 ;;
+esac
+UNIVERSAL=0
+UNSIGNED=0
+TEAM=""
 APP="$ROOT/build/CodexUsager.app"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-if [[ ${#ARCHES[@]} -eq 2 ]]; then
-  lipo -create "$ROOT/.build/arm64-apple-macosx/$CONFIG/CodexUsager" "$ROOT/.build/x86_64-apple-macosx/$CONFIG/CodexUsager" -output "$APP/Contents/MacOS/CodexUsager"
-  lipo -create "$ROOT/.build/arm64-apple-macosx/$CONFIG/ClaudeQuotaBridge" "$ROOT/.build/x86_64-apple-macosx/$CONFIG/ClaudeQuotaBridge" -output "$APP/Contents/MacOS/ClaudeQuotaBridge"
-else
-  cp "$ROOT/.build/${ARCHES[0]}-apple-macosx/$CONFIG/CodexUsager" "$APP/Contents/MacOS/CodexUsager"
-  cp "$ROOT/.build/${ARCHES[0]}-apple-macosx/$CONFIG/ClaudeQuotaBridge" "$APP/Contents/MacOS/ClaudeQuotaBridge"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --universal) UNIVERSAL=1; shift ;;
+    --unsigned) UNSIGNED=1; shift ;;
+    --team|--output)
+      if [[ $# -lt 2 || -z "$2" ]]; then echo "$1 缺少参数。" >&2; exit 2; fi
+      if [[ "$1" == --team ]]; then TEAM="$2"; else APP="$2"; fi
+      shift 2 ;;
+    *) echo "未知参数：$1" >&2; exit 2 ;;
+  esac
+done
+if [[ "$APP" != /* ]]; then APP="$PWD/$APP"; fi
+if [[ "$(basename "$APP")" != CodexUsager.app || -e "$APP" || -L "$APP" ]]; then
+  echo "输出必须是尚不存在的 CodexUsager.app，拒绝覆盖。" >&2; exit 2
 fi
-chmod +x "$APP/Contents/MacOS/CodexUsager" "$APP/Contents/MacOS/ClaudeQuotaBridge"
-cp -R "$ROOT/.build/${ARCHES[0]}-apple-macosx/$CONFIG/CodexUsager_CodexUsager.bundle" "$APP/Contents/Resources/"
-xcrun xcstringstool compile "$ROOT/Sources/CodexUsager/Resources/Localizable.xcstrings" --output-directory "$APP/Contents/Resources"
-"$ROOT/Scripts/generate_icon.sh" "$APP/Contents/Resources/AppIcon.icns"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleName</key><string>CodexUsager</string>
-<key>CFBundleDisplayName</key><string>CodexUsager</string>
-<key>CFBundleIdentifier</key><string>dev.codexusager.app</string>
-<key>CFBundleExecutable</key><string>CodexUsager</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.0.0</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
-<key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
-<key>LSMinimumSystemVersion</key><string>14.6</string>
-<key>NSHighResolutionCapable</key><true/>
-<key>CFBundleIconFile</key><string>AppIcon</string>
-</dict></plist>
-PLIST
-plutil -lint "$APP/Contents/Info.plist" >/dev/null
-lipo -archs "$APP/Contents/MacOS/CodexUsager"
+mkdir -p "$(dirname "$APP")"
+APP="$(cd "$(dirname "$APP")" && pwd)/CodexUsager.app"
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/codexusager-build.XXXXXXXX")
+STAGING=""
+cleanup() {
+  rm -rf "$WORK"
+  if [[ -n "$STAGING" ]]; then rm -rf "$STAGING"; fi
+}
+trap cleanup EXIT
+ARGS=(-project "$ROOT/CodexUsager.xcodeproj" -scheme CodexUsager -configuration "$CONFIG"
+      -destination 'generic/platform=macOS' -derivedDataPath "$WORK/DerivedData")
+if [[ $UNIVERSAL -eq 1 ]]; then ARGS+=("ARCHS=arm64 x86_64" ONLY_ACTIVE_ARCH=NO); fi
+if [[ -n "$TEAM" ]]; then ARGS+=("DEVELOPMENT_TEAM=$TEAM"); fi
+# Explicit unsigned artifacts retain the project's entitlements and capabilities.
+if [[ $UNSIGNED -eq 1 ]]; then ARGS+=(CODE_SIGNING_ALLOWED=NO); fi
+xcodebuild "${ARGS[@]}" build
+
+PRODUCT="$WORK/DerivedData/Build/Products/$CONFIG/CodexUsager.app"
+WIDGET="$PRODUCT/Contents/PlugIns/CodexUsagerWidget.appex"
+PLIST="$PRODUCT/Contents/Info.plist"
+WIDGET_PLIST="$WIDGET/Contents/Info.plist"
+test -d "$PRODUCT"
+test -d "$WIDGET"
+test -s "$PRODUCT/Contents/Resources/AppIcon.icns"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$PLIST")" = APPL
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = dev.codexusager.app
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$WIDGET_PLIST")" = dev.codexusager.app.widget
+for KEY in CFBundleShortVersionString CFBundleVersion UsageAppGroup; do
+  test "$(/usr/libexec/PlistBuddy -c "Print :$KEY" "$PLIST")" = "$(/usr/libexec/PlistBuddy -c "Print :$KEY" "$WIDGET_PLIST")"
+done
+for BINARY in "$PRODUCT/Contents/MacOS/CodexUsager" "$WIDGET/Contents/MacOS/CodexUsagerWidget" "$PRODUCT/Contents/MacOS/ClaudeQuotaBridge"; do
+  test -x "$BINARY"
+  if [[ $UNIVERSAL -eq 1 ]]; then lipo "$BINARY" -verify_arch arm64 x86_64; fi
+done
+if [[ $UNSIGNED -eq 0 ]]; then codesign --verify --strict --deep "$PRODUCT"; fi
+STAGING=$(mktemp -d "$(dirname "$APP")/.codexusager-app.XXXXXXXX")
+ditto "$PRODUCT" "$STAGING/CodexUsager.app"
+# Target the parent so an existing App directory is not treated as a container.
+mv -n "$STAGING/CodexUsager.app" "$(dirname "$APP")/"
+if [[ -e "$STAGING/CodexUsager.app" ]]; then echo "输出已存在，拒绝覆盖。" >&2; exit 2; fi
+if [[ $UNSIGNED -eq 1 ]]; then
+  echo "未签名构建；Gatekeeper 和 Widget 的 App Group 运行能力尚未验证。" >&2
+fi
 echo "$APP"

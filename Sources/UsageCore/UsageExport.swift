@@ -15,13 +15,13 @@ private struct ExportRow: Codable {
     var session: String?
     var project: String?
     var model: String?
-    var input: Int?
-    var cacheRead: Int?
-    var cacheWrite: Int?
-    var output: Int?
-    var reasoning: Int?
-    var total: Int?
-    var originalTotal: Int?
+    var input: Int64?
+    var cacheRead: Int64?
+    var cacheWrite: Int64?
+    var output: Int64?
+    var reasoning: Int64?
+    var total: Int64?
+    var originalTotal: Int64?
     var manual: Bool?
     var sessions: Int?
     var reason: String?
@@ -64,6 +64,7 @@ extension UsageRepository {
                 try handle.write(contentsOf: encoder.encode(row)); first = false
             } else {
                 func number(_ value: Int?) -> String? { value.map(String.init) }
+                func number(_ value: Int64?) -> String? { value.map(String.init) }
                 func tokenJSON(_ value: TokenValues?) throws -> String? {
                     try value.map { String(decoding: try encoder.encode($0), as: UTF8.self) }
                 }

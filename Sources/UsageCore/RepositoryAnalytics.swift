@@ -47,9 +47,11 @@ extension UsageRepository {
         let prices = try modelContext.fetch(FetchDescriptor<StoredModelPrice>()).map { try decoder.decode(ModelPrice.self, from: $0.payload) }
         return (rules, adjustments, manual, prices)
     }
-    public func analytics(query: UsageQuery, now: Date = .now) throws -> AnalyticsSnapshot {
+    public func analytics(query: UsageQuery, now: Date = .now,
+                          timeContext: AnalyticsTimeContext = AnalyticsTimeContext()) throws -> AnalyticsSnapshot {
         let (rules, adjustments, manual, prices) = try metadata()
-        var engine = AnalyticsEngine(query: query, now: now, rules: rules, adjustments: adjustments, prices: prices)
+        var engine = AnalyticsEngine(query: query, now: now, rules: rules, adjustments: adjustments, prices: prices,
+                                     timeContext: timeContext)
         var count = 0
         try modelContext.enumerate(FetchDescriptor<StoredUsage>(), batchSize: 256) { row in
             if count % 256 == 0 { try Task.checkCancellation() }
@@ -64,13 +66,13 @@ extension UsageRepository {
         result.manual = manual.sorted { $0.timestamp > $1.timestamp }; result.prices = prices
         return result
     }
-    public func observedTokens(provider: ProviderID, from start: Date, through end: Date) throws -> Int? {
+    public func observedTokens(provider: ProviderID, from start: Date, through end: Date) throws -> Int64? {
         guard start < end else { return nil }
         let (rules, adjustments, manual, _) = try metadata()
         var query = UsageQuery(); query.period = .all; query.provider = provider
         let engine = AnalyticsEngine(query: query, now: end, rules: rules, adjustments: adjustments, prices: [])
         let id = provider.rawValue
-        var total = 0
+        var total: Int64 = 0
         var available = true
         try modelContext.enumerate(FetchDescriptor<StoredUsage>(predicate: #Predicate {
             $0.provider == id && $0.timestamp >= start && $0.timestamp <= end

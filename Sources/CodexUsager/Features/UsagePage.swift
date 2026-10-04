@@ -6,7 +6,7 @@ struct UsagePage: View {
     @Bindable var model: AppModel
     let width: CGFloat
     let openRecords: () -> Void
-    private var composition: [(TokenMetric, Int)] {
+    private var composition: [(TokenMetric, Int64)] {
         [TokenMetric.input, .cacheRead, .cacheWrite, .output]
             .compactMap { metric in model.analytics.composition[metric].map { (metric, $0) } }
             .filter { $0.1 > 0 }
@@ -24,7 +24,7 @@ struct UsagePage: View {
                     DashboardGroup {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), alignment: .leading)], spacing: 16) {
                             ForEach(TokenMetric.allCases) { metric in Metric(value: model.analytics.tokens[metric], title: metric.title) }
-                            Metric(value: model.analytics.sessions.count, title: "会话数")
+                            Metric(value: Int64(model.analytics.sessions.count), title: "会话数")
                         }
                         Text("Codex 输入包含缓存读取；Claude 输入、缓存读取与写入分别计入总量。推理不重复加到输出。缺失字段显示 —。")
                             .font(.caption).foregroundStyle(.secondary)

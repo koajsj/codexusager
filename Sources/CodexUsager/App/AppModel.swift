@@ -15,68 +15,66 @@ public enum MenuSource: String, CaseIterable, Identifiable {
 enum MenuStyle: String, CaseIterable { case dualQuota, quotaCountdown, minimal, icon }
 enum MenuValue: String, CaseIterable { case remaining, used }
 
+/// Serializes snapshot writes so a cancelled older publish cannot overwrite newer quota data.
+private actor WidgetSnapshotPublisher {
+    func write(_ snapshot: WidgetSnapshot) throws {
+        try Task.checkCancellation()
+        try WidgetSnapshotStore.write(snapshot)
+    }
+}
+
 @MainActor @Observable final class AppModel {
-    var codexStatus = ProviderStatus(id: .codex)
-    var claudeStatus = ProviderStatus(id: .claude)
-    var codexQuota = QuotaState()
-    var claudeQuota = QuotaState()
-    var analytics = AnalyticsSnapshot()
-    var query = UsageQuery() { didSet { reloadAnalytics() } }
-    var sessionEntries: [UsageEntry] = []
-    var isLoadingSession = false
-    var isRefreshing = false
-    var isImporting = false
-    var isAggregating = false
+    let authenticationViewModel = AuthenticationViewModel()
+    var hasCheckedCodexAccount = false
+    let quotaViewModel = QuotaViewModel()
+    let analyticsViewModel = AnalyticsViewModel()
+    let refreshViewModel = RefreshViewModel()
+    let settingsViewModel = SettingsViewModel()
+    let errorCenter = ErrorCenter()
+    var codexStatus: ProviderStatus { get { quotaViewModel.codexStatus } set { quotaViewModel.codexStatus = newValue } }
+    var claudeStatus: ProviderStatus { get { quotaViewModel.claudeStatus } set { quotaViewModel.claudeStatus = newValue } }
+    var codexQuota: QuotaState { get { quotaViewModel.codexQuota } set { quotaViewModel.codexQuota = newValue } }
+    var claudeQuota: QuotaState { get { quotaViewModel.claudeQuota } set { quotaViewModel.claudeQuota = newValue } }
+    var analytics: AnalyticsSnapshot { get { analyticsViewModel.snapshot } set { analyticsViewModel.snapshot = newValue } }
+    var query: UsageQuery { get { analyticsViewModel.query } set { analyticsViewModel.query = newValue; reloadAnalytics() } }
+    var sessionEntries: [UsageEntry] { get { analyticsViewModel.sessionEntries } set { analyticsViewModel.sessionEntries = newValue } }
+    var isLoadingSession: Bool { get { analyticsViewModel.isLoadingSession } set { analyticsViewModel.isLoadingSession = newValue } }
+    var isAggregating: Bool { get { analyticsViewModel.isAggregating } set { analyticsViewModel.isAggregating = newValue } }
+    var hasIndexed: Bool { get { analyticsViewModel.hasIndexed } set { analyticsViewModel.hasIndexed = newValue } }
+    var isRefreshing: Bool { get { refreshViewModel.isRefreshing } set { refreshViewModel.isRefreshing = newValue } }
+    var isImporting: Bool { get { refreshViewModel.isImporting } set { refreshViewModel.isImporting = newValue } }
+    var sourceSummaries: [ProviderID: SourceCenterSummary] { get { refreshViewModel.sourceSummaries } set { refreshViewModel.sourceSummaries = newValue } }
+    var sourceRefresh: [ProviderID: SourceRefreshMetadata] { get { refreshViewModel.sourceRefresh } set { refreshViewModel.sourceRefresh = newValue } }
+    var lastRefresh: Date? { get { refreshViewModel.lastRefresh } set { refreshViewModel.lastRefresh = newValue } }
+    var lastImport: Date? { get { refreshViewModel.lastImport } set { refreshViewModel.lastImport = newValue } }
+    var quotaHistory: [ProviderID: [QuotaHistoryPoint]] { get { quotaViewModel.history } set { quotaViewModel.history = newValue } }
+    var pace: [String: PaceResult] { get { quotaViewModel.pace } set { quotaViewModel.pace = newValue } }
     var isSaving = false
     var isExporting = false
-    var hasIndexed = false
     var storageError: String?
     var operationError: String?
     var widgetError: String?
     var notificationError: String?
-    var quotaHistory: [ProviderID: [QuotaHistoryPoint]] = [:]
-    var pace: [String: PaceResult] = [:]
-    var sourceSummaries: [ProviderID: SourceCenterSummary] = [:]
-    var sourceRefresh: [ProviderID: SourceRefreshMetadata] = [:]
     var backupModel: BackupViewModel?
-    private(set) var welcomeCompleted = AppPreferencesService.shared.bool(.welcomeCompleted) {
-        didSet { AppPreferencesService.shared.set(welcomeCompleted, for: .welcomeCompleted) }
-    }
-    var lastRefresh: Date?
-    var lastImport: Date?
-    var menuSource = MenuSource(rawValue: AppPreferencesService.shared.string(.menuSource, fallback: "codex")) ?? .codex {
-        didSet { AppPreferencesService.shared.set(menuSource.rawValue, for: .menuSource); statusBar?.update() }
-    }
-    var menuStyle = MenuStyle(rawValue: AppPreferencesService.shared.string(.menuStyle, fallback: "dualQuota")) ?? .dualQuota {
-        didSet { AppPreferencesService.shared.set(menuStyle.rawValue, for: .menuStyle); statusBar?.update() }
-    }
-    var menuValue = MenuValue(rawValue: AppPreferencesService.shared.string(.menuValue, fallback: "remaining")) ?? .remaining {
-        didSet { AppPreferencesService.shared.set(menuValue.rawValue, for: .menuValue); statusBar?.update() }
-    }
-    var refreshAutomatically = AppPreferencesService.shared.bool(.refreshAutomatically, fallback: true) {
-        didSet { AppPreferencesService.shared.set(refreshAutomatically, for: .refreshAutomatically) }
-    }
-    var hidePaths = AppPreferencesService.shared.bool(.hidePaths, fallback: true) {
-        didSet { AppPreferencesService.shared.set(hidePaths, for: .hidePaths) }
-    }
-    var appearance = AppPreferencesService.shared.string(.appearance, fallback: "system") {
-        didSet { AppPreferencesService.shared.set(appearance, for: .appearance) }
-    }
-    var notifyCodex25 = AppPreferencesService.shared.bool(.notifyCodex25) {
-        didSet { notificationChanged(.notifyCodex25, enabled: notifyCodex25) }
-    }
-    var notifyCodex10 = AppPreferencesService.shared.bool(.notifyCodex10) {
-        didSet { notificationChanged(.notifyCodex10, enabled: notifyCodex10) }
-    }
-    var notifyCodexReset = AppPreferencesService.shared.bool(.notifyCodexReset) {
-        didSet { notificationChanged(.notifyCodexReset, enabled: notifyCodexReset) }
-    }
-    var notifyClaude25 = AppPreferencesService.shared.bool(.notifyClaude25) {
-        didSet { notificationChanged(.notifyClaude25, enabled: notifyClaude25) }
-    }
+    private(set) var welcomeCompleted: Bool { get { settingsViewModel.welcomeCompleted } set { settingsViewModel.welcomeCompleted = newValue } }
+    var menuSource: MenuSource { get { settingsViewModel.menuSource } set { settingsViewModel.menuSource = newValue; statusBar?.update() } }
+    var menuStyle: MenuStyle { get { settingsViewModel.menuStyle } set { settingsViewModel.menuStyle = newValue; statusBar?.update() } }
+    var menuValue: MenuValue { get { settingsViewModel.menuValue } set { settingsViewModel.menuValue = newValue; statusBar?.update() } }
+    var refreshAutomatically: Bool { get { settingsViewModel.refreshAutomatically } set { settingsViewModel.refreshAutomatically = newValue } }
+    var hidePaths: Bool { get { settingsViewModel.hidePaths } set { settingsViewModel.hidePaths = newValue } }
+    var appearance: String { get { settingsViewModel.appearance } set { settingsViewModel.appearance = newValue } }
+    var notifyCodex25: Bool { get { settingsViewModel.notifyCodex25 } set { settingsViewModel.notifyCodex25 = newValue; notificationChanged(.notifyCodex25, enabled: newValue) } }
+    var notifyCodex10: Bool { get { settingsViewModel.notifyCodex10 } set { settingsViewModel.notifyCodex10 = newValue; notificationChanged(.notifyCodex10, enabled: newValue) } }
+    var notifyCodexReset: Bool { get { settingsViewModel.notifyCodexReset } set { settingsViewModel.notifyCodexReset = newValue; notificationChanged(.notifyCodexReset, enabled: newValue) } }
+    var notifyClaude25: Bool { get { settingsViewModel.notifyClaude25 } set { settingsViewModel.notifyClaude25 = newValue; notificationChanged(.notifyClaude25, enabled: newValue) } }
     var openMainWindow: () -> Void = {}
+    var refreshPolicy: RefreshPolicy { get { settingsViewModel.refreshPolicy } set { settingsViewModel.refreshPolicy = newValue } }
+    private var lastQuotaAttempt: Date?
+    private var lastScanAttempt: Date?
+    private var lastActivationRefresh: Date?
     private let refreshService = DataRefreshService()
     private let quotaNotifier = QuotaNotifier()
+    private let widgetPublisher = WidgetSnapshotPublisher()
     private var repository: UsageRepository?
     private var statusBar: StatusBarController?
     private var refreshTask: Task<Void, Never>?
@@ -98,6 +96,7 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     private var detailGeneration = 0
     private var selectedSession: SessionSummary?
     private var isApplyingBackupSettings = false
+    private var lastAnalyticsDay: Date?
 
     var selectedProvider: ProviderID {
         menuSource.provider ?? (!codexQuota.isStale && codexQuota.snapshot?.windows.isEmpty == false ? .codex :
@@ -114,13 +113,11 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         return .notInstalled
     }
     var menuWindows: [QuotaWindow] { QuotaDisplayPolicy.menuWindows(from: selectedQuota.snapshot?.windows ?? []) }
-    var selectedTodayTokens: Int? { hasIndexed ? analytics.todayByProvider[selectedProvider] : nil }
-    func status(_ provider: ProviderID) -> ProviderStatus { provider == .codex ? codexStatus : claudeStatus }
-    func quota(_ provider: ProviderID) -> QuotaState { provider == .codex ? codexQuota : claudeQuota }
+    var selectedTodayTokens: Int64? { hasIndexed ? analytics.todayByProvider[selectedProvider] : nil }
+    func status(_ provider: ProviderID) -> ProviderStatus { quotaViewModel.status(provider) }
+    func quota(_ provider: ProviderID) -> QuotaState { quotaViewModel.quota(provider) }
     func menuNumber(_ window: QuotaWindow) -> Double { menuValue == .remaining ? window.remainingPercent : window.usedPercent }
-    func paceFor(_ provider: ProviderID, _ window: QuotaWindow) -> PaceResult? {
-        pace["\(provider.rawValue):\(window.id)"]
-    }
+    func paceFor(_ provider: ProviderID, _ window: QuotaWindow) -> PaceResult? { quotaViewModel.paceFor(provider, window) }
     func completeWelcome() { welcomeCompleted = true }
     func providerIsConnected(_ provider: ProviderID) -> Bool {
         let value = status(provider)
@@ -128,53 +125,19 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             [AuthenticationStatus.chatGPT, .authenticated, .apiKey].contains(value.authentication)
     }
     func sourceConnectionHealth(_ provider: ProviderID) -> ConnectionHealth {
-        isRefreshing ? .syncing : status(provider).health
+        (isRefreshing || (provider == .codex && authenticationViewModel.isWorking)) ? .syncing : status(provider).health
     }
-    func sourceSessionStatus(_ provider: ProviderID) -> String {
-        if storageError != nil { return "本地数据库不可用" }
-        if isImporting { return "正在索引" }
-        if sourceRefresh[provider]?.scanError != nil { return "扫描存在错误" }
-        guard let summary = sourceSummaries[provider] else { return "等待扫描" }
-        if summary.failedFiles > 0 { return "部分来源读取失败" }
-        if (summary.unsupportedRecords ?? 0) > 0 { return "部分格式不支持" }
-        if summary.malformedRecords > 0 { return "存在损坏记录" }
-        if summary.indexedRecords == 0 { return "尚未找到用量记录" }
-        if let last = sourceRefresh[provider]?.scannedAt ?? summary.lastScan,
-           Date().timeIntervalSince(last) > 300 { return "已索引 · 扫描已过期" }
-        return "已索引"
-    }
+    func sourceSessionStatus(_ provider: ProviderID) -> String { refreshViewModel.sessionStatus(provider, storageError: storageError) }
     func localSourceHealth(_ provider: ProviderID, at now: Date) -> ConnectionHealth {
-        if isImporting { return .syncing }
-        if storageError != nil || sourceRefresh[provider]?.scanError != nil { return .parseError }
-        guard let summary = sourceSummaries[provider] else { return .unavailable }
-        if summary.failedFiles > 0 || summary.malformedRecords > 0 { return .parseError }
-        if (summary.unsupportedRecords ?? 0) > 0 { return .unavailable }
-        guard summary.indexedRecords > 0 else { return .unavailable }
-        guard let last = sourceRefresh[provider]?.scannedAt ?? summary.lastScan else { return .unavailable }
-        return now.timeIntervalSince(last) > 300 ? .stale : .connected
+        refreshViewModel.localHealth(provider, at: now, storageError: storageError)
     }
-    func homeQuotaStatus(at now: Date) -> String {
-        var remaining: [Double] = [], waiting = false
-        for provider in ProviderID.allCases {
-            let state = quota(provider)
-            for window in state.snapshot?.windows ?? [] {
-                if state.isStale || window.isAwaitingRefresh(at: now) || now.timeIntervalSince(window.fetchedAt) > 300 {
-                    waiting = true
-                } else if window.remainingPercent.isFinite { remaining.append(window.remainingPercent) }
-            }
-        }
-        guard let minimum = remaining.min() else { return waiting ? "等待额度更新" : "额度不可用" }
-        if minimum < 10 { return "有额度低于 10%" }
-        if minimum < 25 { return "有额度低于 25%" }
-        return waiting ? "部分额度待更新" : "额度可用"
-    }
+    func homeQuotaStatus(at now: Date) -> String { quotaViewModel.homeStatus(at: now) }
     func refreshData() { refreshAll(); importSources() }
-    private func backupSettings() -> BackupSettings {
-        BackupSettings(appearance: appearance, menuSource: menuSource.rawValue, menuStyle: menuStyle.rawValue,
-            menuValue: menuValue.rawValue, refreshAutomatically: refreshAutomatically, hidePaths: hidePaths,
-            notifyCodex25: notifyCodex25, notifyCodex10: notifyCodex10, notifyCodexReset: notifyCodexReset,
-            notifyClaude25: notifyClaude25, welcomeCompleted: welcomeCompleted)
+    func dismissOperationError() {
+        operationError = nil
+        for scope in [ErrorScope.operation, .session, .export] { errorCenter.clear(scope) }
     }
+    private func backupSettings() -> BackupSettings { settingsViewModel.backup() }
     private func applyBackupSettings(_ value: BackupSettings) {
         // Restoring notification choices does not initiate a system permission prompt.
         isApplyingBackupSettings = true
@@ -183,14 +146,15 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         if let source = MenuSource(rawValue: value.menuSource) { menuSource = source }
         if let style = MenuStyle(rawValue: value.menuStyle) { menuStyle = style }
         if let number = MenuValue(rawValue: value.menuValue) { menuValue = number }
-        refreshAutomatically = value.refreshAutomatically; hidePaths = value.hidePaths
+        if let saved = value.refreshPolicy.flatMap(RefreshPolicy.init(rawValue:)) { refreshPolicy = saved }
+        else { refreshAutomatically = value.refreshAutomatically }
+        hidePaths = value.hidePaths
         notifyCodex25 = value.notifyCodex25; notifyCodex10 = value.notifyCodex10
         notifyCodexReset = value.notifyCodexReset; notifyClaude25 = value.notifyClaude25
         if !notifyCodex25 && !notifyCodex10 && !notifyCodexReset && !notifyClaude25 { notificationError = nil }
         welcomeCompleted = welcomeCompleted || value.welcomeCompleted
     }
     private func notificationChanged(_ key: AppPreferenceKey, enabled: Bool) {
-        AppPreferencesService.shared.set(enabled, for: key)
         guard !isApplyingBackupSettings else { return }
         guard enabled else { notificationError = nil; return }
         Task {
@@ -214,8 +178,9 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                     return UsageRepository(modelContainer: try UsageStorage.makeContainer(url: root.appendingPathComponent("usage.store")))
                 }.value
-                repository = repo
+                try await repo.scrubStoredAccountIdentities()
                 try await repo.upgradeSourceIndex()
+                repository = repo
                 let fallbackSettings = backupSettings()
                 backupModel = BackupViewModel(service: BackupService(repository: repo),
                     settings: { [weak self] in self?.backupSettings() ?? fallbackSettings },
@@ -236,15 +201,40 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                 reloadAnalytics(); importSources()
                 reloadSourceSummaries()
                 statusBar?.update(); publishWidget()
-            } catch { storageError = "本地数据库无法打开或迁移。请检查磁盘空间与文件权限后重新打开 App。" }
+            } catch {
+                let message = "本地数据库无法打开或迁移。请检查磁盘空间与文件权限后重新打开 App。"
+                storageError = message
+                errorCenter.report(AppError(message, debugDetail: "storage_start: \(type(of: error))",
+                    recoverySuggestion: "检查磁盘空间与文件权限后重新打开 App。"), for: .storage)
+            }
             isStarting = false
         }
     }
     private func accountKey(_ status: ProviderStatus) -> String? {
         AccountBinding.key(provider: status.id, identity: status.account?.identity)
     }
+    func loginChatGPT() {
+        authenticationViewModel.login { [weak self] in
+            await self?.refreshService.resetCodexConnection()
+            await self?.invalidateAccount()
+        }
+    }
+    func logoutChatGPT() {
+        authenticationViewModel.logout { [weak self] in
+            await self?.refreshService.resetCodexConnection()
+            await self?.invalidateAccount()
+        }
+    }
+    func becameActive() {
+        guard isStarting || repository != nil || storageError != nil else { return }
+        let now = Date()
+        guard lastActivationRefresh.map({ now.timeIntervalSince($0) >= 30 }) ?? true else { return }
+        lastActivationRefresh = now
+        if refreshPolicy != .manual { refreshAll() }
+    }
     func refreshAll() {
         if refreshTask != nil { pendingRefresh = true; return }
+        lastQuotaAttempt = .now
         refreshTask = Task {
             repeat {
                 pendingRefresh = false; isRefreshing = true
@@ -252,9 +242,11 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                 async let codexRead = refreshService.refresh(.codex)
                 async let claudeRead = refreshService.refresh(.claude)
                 let (first, second) = await (codexRead, claudeRead)
+                guard !Task.isCancelled else { break }
                 if generation == accountGeneration { await apply(first) }
                 else { pendingRefresh = true }
                 await apply(second)
+                guard !Task.isCancelled else { break }
                 lastRefresh = .now
                 let metadata = await refreshService.metadata()
                 if !Task.isCancelled { applySourceRefresh(metadata) }
@@ -264,9 +256,16 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         }
     }
     private func apply(_ read: ProviderRead) async {
+        if read.status.id == .codex {
+            hasCheckedCodexAccount = true
+            if read.status.authentication == .chatGPT { completeWelcome() }
+        }
         let old = status(read.status.id)
         var nextStatus = read.status
-        if nextStatus.health == .offline, nextStatus.account == nil, old.account != nil {
+        if let issue = nextStatus.issue { errorCenter.report(issue, for: .provider(nextStatus.id)) }
+        else { errorCenter.clear(.provider(nextStatus.id)) }
+        if ([.offline, .parseError, .stale].contains(nextStatus.health) || nextStatus.readOutcome == .unsupportedVersion),
+           nextStatus.account == nil, old.account != nil {
             nextStatus.account = old.account
             nextStatus.authentication = old.authentication
             nextStatus.version = nextStatus.version ?? old.version
@@ -284,13 +283,19 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         if var snapshot = read.quota {
             snapshot.accountKey = newKey ?? AccountBinding.key(provider: nextStatus.id, identity: snapshot.accountID)
             state.apply(snapshot)
-            if nextStatus.health == .stale || Date().timeIntervalSince(snapshot.fetchedAt) > 300 ||
-                snapshot.windows.contains(where: { $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > 300 }) {
+            if nextStatus.health != .connected || Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFreshness.maximumAge ||
+                snapshot.windows.contains(where: { $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > QuotaFreshness.maximumAge }) {
                 state.markFailure("stale")
             }
             snapshotToSave = snapshot
-        } else if nextStatus.health == .offline { state.markFailure("offline") }
-        else if nextStatus.quotaAvailability != .available { state = QuotaState() }
+        } else if [.offline, .parseError, .stale].contains(nextStatus.health) {
+            state.markFailure(nextStatus.issue?.debugDetail ?? "source_unavailable")
+        }
+        else if nextStatus.quotaAvailability != .available {
+            if state.snapshot != nil, [.authenticated, .chatGPT].contains(nextStatus.authentication) {
+                state.markFailure(nextStatus.issue?.debugDetail ?? "quota_unavailable")
+            } else { state = QuotaState() }
+        }
         if nextStatus.id == .codex { codexStatus = nextStatus; codexQuota = state }
         else { claudeStatus = nextStatus; claudeQuota = state }
         if shouldClear {
@@ -310,16 +315,17 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         guard quotaEventsTask == nil else { return }
         quotaEventsTask = Task {
             for await event in refreshService.codexEvents {
+                guard !Task.isCancelled else { break }
                 switch event {
                 case .quota(var sparse):
                     guard codexStatus.authentication == .chatGPT, let current = codexQuota.snapshot else { continue }
                     if let incoming = sparse.accountID, let existing = current.accountID, incoming != existing {
-                        invalidateAccount(); continue
+                        await invalidateAccount(); continue
                     }
                     sparse.accountKey = current.accountKey
                     codexQuota.merge(sparse)
                     if codexQuota.snapshot?.windows.contains(where: {
-                        $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > 300
+                        $0.isAwaitingRefresh(at: .now) || Date().timeIntervalSince($0.fetchedAt) > QuotaFreshness.maximumAge
                     }) == true {
                         codexQuota.markFailure("reset_pending")
                     }
@@ -330,18 +336,25 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                         } catch { persistenceFailed() }
                     }
                     statusBar?.update(); publishWidget(); scheduleResetRefresh()
-                case .accountChanged: invalidateAccount()
+                case .accountChanged: await invalidateAccount()
                 case .disconnected:
                     codexQuota.markFailure("offline"); codexStatus.health = .offline
-                    statusBar?.update(); publishWidget(); refreshAll()
+                    statusBar?.update(); publishWidget()
+                case .issue(let issue):
+                    codexQuota.markFailure(issue.debugDetail)
+                    codexStatus.issue = issue; codexStatus.health = .parseError
+                    errorCenter.report(issue, for: .provider(.codex))
+                    statusBar?.update(); publishWidget()
                 }
             }
         }
     }
-    private func invalidateAccount() {
-        accountGeneration += 1; codexQuota = QuotaState(); codexStatus.health = .syncing
+    private func invalidateAccount() async {
+        accountGeneration += 1; codexQuota = QuotaState(); codexStatus = ProviderStatus(id: .codex)
+        quotaHistory[.codex] = []
+        pace = pace.filter { !$0.key.hasPrefix("codex:") }
         statusBar?.update(); publishWidget()
-        Task { do { try await repository?.clearQuota(.codex) } catch { persistenceFailed() } }
+        do { try await repository?.clearQuota(.codex) } catch { persistenceFailed() }
         refreshAll()
     }
     private func startPolling() {
@@ -349,11 +362,19 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         pollingTask = Task {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
-                if refreshAutomatically { refreshAll(); importSources() }
+                let now = Date()
+                let remaining = [codexQuota, claudeQuota].filter { !$0.isStale }
+                    .flatMap { $0.snapshot?.windows ?? [] }.map(\.remainingPercent).min()
+                if let interval = refreshPolicy.quotaInterval(remaining: remaining),
+                   lastQuotaAttempt.map({ now.timeIntervalSince($0) >= interval }) ?? true { refreshAll() }
+                if let interval = refreshPolicy.scanInterval,
+                   lastScanAttempt.map({ now.timeIntervalSince($0) >= interval }) ?? true { importSources() }
+                let today = AnalyticsTimeContext().calendar.startOfDay(for: .now)
+                if hasIndexed, lastAnalyticsDay != today { reloadAnalytics() }
                 for provider in ProviderID.allCases {
                     if let snapshot = quota(provider).snapshot,
-                       Date().timeIntervalSince(snapshot.fetchedAt) > 300 ||
-                       snapshot.windows.contains(where: { Date().timeIntervalSince($0.fetchedAt) > 300 }) {
+                       Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFreshness.maximumAge ||
+                       snapshot.windows.contains(where: { Date().timeIntervalSince($0.fetchedAt) > QuotaFreshness.maximumAge }) {
                         if provider == .codex { codexQuota.markFailure("stale") } else { claudeQuota.markFailure("stale") }
                     }
                 }
@@ -372,11 +393,13 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             attemptedResets = [key]
             if codexQuota.snapshot?.windows.contains(where: { $0.isAwaitingRefresh(at: .now) }) == true { codexQuota.markFailure("reset_pending") }
             if claudeQuota.snapshot?.windows.contains(where: { $0.isAwaitingRefresh(at: .now) }) == true { claudeQuota.markFailure("reset_pending") }
-            statusBar?.update(); publishWidget(); refreshAll()
+            statusBar?.update(); publishWidget()
+            if refreshPolicy != .manual { refreshAll() }
         }
     }
     func importSources() {
         guard importTask == nil, let repository else { return }
+        lastScanAttempt = .now
         isImporting = true
         importTask = Task {
             var changed = !hasIndexed
@@ -386,7 +409,11 @@ enum MenuValue: String, CaseIterable { case remaining, used }
                     changed = result.changed || changed
                     lastImport = result.completedAt
                 } catch is CancellationError { break }
-                catch { persistenceFailed() }
+                catch {
+                    errorCenter.report(AppError("本地会话扫描失败。", debugDetail: "scan: \(type(of: error))",
+                        recoverySuggestion: "检查来源目录权限和磁盘空间后重新刷新。"), for: .scan(provider))
+                    persistenceFailed()
+                }
             }
             let metadata = await refreshService.metadata()
             if !Task.isCancelled { applySourceRefresh(metadata) }
@@ -399,17 +426,26 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         guard let repository else { return }
         analyticsGeneration += 1
         let generation = analyticsGeneration, filter = query
+        let now = Date(), timeContext = AnalyticsTimeContext()
         analyticsTask?.cancel()
         analyticsTask = Task {
             isAggregating = true
             do {
                 try await Task.sleep(for: .milliseconds(180))
-                let value = try await repository.analytics(query: filter)
+                let value = try await repository.analytics(query: filter, now: now, timeContext: timeContext)
                 guard generation == analyticsGeneration, !Task.isCancelled else { return }
                 analytics = value; hasIndexed = true; storageError = nil
+                lastAnalyticsDay = timeContext.calendar.startOfDay(for: now)
+                errorCenter.clear(.analytics); errorCenter.clear(.storage)
                 statusBar?.update()
             } catch is CancellationError { }
-            catch { if generation == analyticsGeneration { persistenceFailed() } }
+            catch {
+                if generation == analyticsGeneration {
+                    errorCenter.report(AppError("统计数据读取失败。", debugDetail: "analytics: \(type(of: error))",
+                        recoverySuggestion: "检查本地数据库后重新刷新。"), for: .analytics)
+                    persistenceFailed()
+                }
+            }
             if generation == analyticsGeneration { isAggregating = false }
         }
     }
@@ -435,6 +471,9 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             if let current = sourceRefresh[provider]?.updatedAt,
                value.updatedAt == nil || current > (value.updatedAt ?? .distantPast) { continue }
             sourceRefresh[provider] = value
+            if let message = value.scanError {
+                errorCenter.report(AppError(message, debugDetail: "scan_metadata", recoverySuggestion: "检查目录权限后重新扫描。"), for: .scan(provider))
+            } else { errorCenter.clear(.scan(provider)) }
         }
         lastImport = sourceRefresh.values.compactMap(\.scannedAt).max()
     }
@@ -448,7 +487,14 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             do {
                 let entries = try await repository.sessionEntries(session)
                 if generation == detailGeneration, !Task.isCancelled { sessionEntries = entries }
-            } catch { if generation == detailGeneration { operationError = "会话详情读取失败，请刷新后重试。" } }
+            } catch {
+                if generation == detailGeneration {
+                    let message = "会话详情读取失败，请刷新后重试。"
+                    operationError = message
+                    errorCenter.report(AppError(message, debugDetail: "session: \(type(of: error))",
+                        recoverySuggestion: "刷新本地会话后重试。"), for: .session)
+                }
+            }
             if generation == detailGeneration { isLoadingSession = false }
         }
     }
@@ -464,7 +510,11 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         operationError = nil; isSaving = true
         Task {
             do { try await operation(repository); reloadAnalytics(); loadSession(selectedSession) }
-            catch { operationError = error.localizedDataMessage }
+            catch {
+                operationError = error.localizedDataMessage
+                errorCenter.report(AppError(error.localizedDataMessage, debugDetail: "mutation: \(type(of: error))",
+                    recoverySuggestion: "检查输入及本地数据库状态后重试。"), for: .operation)
+            }
             isSaving = false
         }
     }
@@ -480,12 +530,22 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             self.operationError = nil; self.isExporting = true
             Task {
                 do { try await repository.export(to: url, kind: kind, format: format, query: filter, revealPaths: revealPaths) }
-                catch { self.operationError = "导出失败。请检查目标文件夹权限和磁盘空间后重试。" }
+                catch {
+                    let message = "导出失败。请检查目标文件夹权限和磁盘空间后重试。"
+                    self.operationError = message
+                    self.errorCenter.report(AppError(message, debugDetail: "export: \(type(of: error))",
+                        recoverySuggestion: "检查目标文件夹权限和磁盘空间后重试。"), for: .export)
+                }
                 self.isExporting = false
             }
         }
     }
-    private func persistenceFailed() { storageError = "本地统计保存或读取失败。请检查磁盘空间和文件权限，然后刷新。" }
+    private func persistenceFailed() {
+        let message = "本地统计保存或读取失败。请检查磁盘空间和文件权限，然后刷新。"
+        storageError = message
+        errorCenter.report(AppError(message, debugDetail: "storage_io",
+            recoverySuggestion: "检查磁盘空间和文件权限后刷新。"), for: .storage)
+    }
     private func refreshAfterRestore() {
         reloadAnalytics(); loadSession(selectedSession); reloadSourceSummaries()
         restoredHistoryTask?.cancel()
@@ -523,7 +583,7 @@ enum MenuValue: String, CaseIterable { case remaining, used }
             quotaHistory[provider] = points
             for window in current.windows {
                 let measured = PaceCalculator.calculate(current: window, history: points, observedTokens: nil)
-                let tokens: Int?
+                let tokens: Int64?
                 if let measured {
                     let start = window.fetchedAt.addingTimeInterval(-measured.sampleHours * 3600)
                     tokens = try await repository.observedTokens(provider: provider, from: start, through: window.fetchedAt)
@@ -551,10 +611,17 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         widgetTask = Task {
             do {
                 try await Task.sleep(for: .seconds(1))
-                try await Task.detached(priority: .utility) { try WidgetSnapshotStore.write(snapshot) }.value
-                widgetError = nil; WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.kind)
+                try await widgetPublisher.write(snapshot)
+                try Task.checkCancellation()
+                widgetError = nil; errorCenter.clear(.widget)
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.kind)
             } catch is CancellationError { }
-            catch { widgetError = "Widget 共享容器不可用，请使用配置相同开发团队与 App Group 的 Xcode 工程。" }
+            catch {
+                let message = "Widget 共享容器不可用，请使用配置相同开发团队与 App Group 的 Xcode 工程。"
+                widgetError = message
+                errorCenter.report(AppError(message, debugDetail: "widget: \(type(of: error))",
+                    recoverySuggestion: "检查 App 与 Widget 的 App Group 和签名配置。"), for: .widget)
+            }
         }
     }
     func openLoginGuide(_ provider: ProviderID) {
@@ -567,8 +634,17 @@ enum MenuValue: String, CaseIterable { case remaining, used }
     }
     func copyClaudeBridgeConfiguration() {
         let object: [String: Any] = ["statusLine": ["type": "command", "command": claudeBridgeCommand]]
-        if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), let text = String(data: data, encoding: .utf8) {
-            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        do {
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            guard let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadCorruptFile) }
+            NSPasteboard.general.clearContents()
+            guard NSPasteboard.general.setString(text, forType: .string) else { throw CocoaError(.fileWriteUnknown) }
+            operationError = nil; errorCenter.clear(.operation)
+        } catch {
+            let message = "复制 Claude 桥接配置失败，请重试。"
+            operationError = message
+            errorCenter.report(AppError(message, debugDetail: "clipboard: \(type(of: error))",
+                recoverySuggestion: "检查剪贴板权限后重试。"), for: .operation)
         }
     }
     func shutdown() {
@@ -577,6 +653,7 @@ enum MenuValue: String, CaseIterable { case remaining, used }
         sourceSummaryTask?.cancel()
         restoredHistoryTask?.cancel()
         backupModel?.shutdown()
+        authenticationViewModel.shutdown()
         Task { await refreshService.stop() }
     }
 }

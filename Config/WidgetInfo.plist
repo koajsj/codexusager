@@ -10,7 +10,7 @@
 <key>CFBundlePackageType</key><string>XPC!</string>
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-<key>LSMinimumSystemVersion</key><string>14.6</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>UsageAppGroup</key><string>$(USAGE_APP_GROUP)</string>
 <key>NSExtension</key><dict>
   <key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string>

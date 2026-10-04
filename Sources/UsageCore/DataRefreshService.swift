@@ -117,5 +117,6 @@ public actor DataRefreshService {
         }
         return (paths.sorted(by: { $0.path < $1.path }), directoryFailure)
     }
+    public func resetCodexConnection() async { await codex.reconnect() }
     public func stop() async { await codex.stop(); await claude.stop() }
 }

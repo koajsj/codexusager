@@ -28,6 +28,8 @@ import UsageCore
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = AnalyticsTimeContext().calendar
+        formatter.timeZone = formatter.calendar.timeZone
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         panel.nameFieldStringValue = "CodexUsager-backup-\(formatter.string(from: .now)).json"
         panel.begin { [weak self] response in

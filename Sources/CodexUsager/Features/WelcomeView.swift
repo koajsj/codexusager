@@ -28,11 +28,16 @@ struct WelcomeView: View {
                     }
                 }
             }
-            Text("连接状态来自本机工具；首次检查可能需要片刻。登录与数据来源可稍后在「数据来源」中查看。")
+            if model.codexStatus.authentication != .chatGPT {
+                Text("连接 ChatGPT 后可查看 ChatGPT 套餐、Codex 实时额度和重置时间。")
+                    .font(.callout)
+                ChatGPTConnectionControls(model: model)
+            }
+            Text("登录由官方 Codex CLI 在默认浏览器中完成；凭据存入系统 Keychain。可稍后从数据来源连接。")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button(model.welcomeCompleted ? "完成" : "开始使用") {
+                Button(model.welcomeCompleted ? "完成" : "暂时跳过，开始使用") {
                     model.completeWelcome(); dismiss()
                 }.keyboardShortcut(.defaultAction)
             }

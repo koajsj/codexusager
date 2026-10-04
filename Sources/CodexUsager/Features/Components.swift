@@ -26,7 +26,7 @@ struct PageFrame<Content: View>: View {
     }
 }
 struct TokenNumber: View {
-    let value: Int?
+    let value: Int64?
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
@@ -41,7 +41,7 @@ struct TokenNumber: View {
     }
 }
 struct Metric: View {
-    let value: Int?
+    let value: Int64?
     let title: String
     var color: Color? = nil
     var body: some View {

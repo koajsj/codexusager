@@ -1,5 +1,9 @@
 import Foundation
 
+public enum QuotaFreshness {
+    public static let maximumAge: TimeInterval = 20 * 60
+}
+
 /// Shared verbatim by the app and extension. No identity, path, credential, or session content.
 public struct WidgetQuota: Codable, Sendable, Identifiable {
     public var id: String

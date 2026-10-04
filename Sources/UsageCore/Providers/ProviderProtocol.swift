@@ -2,6 +2,36 @@ import Foundation
 
 public enum AuthenticationStatus: String, Sendable, Codable { case unknown, signedOut, chatGPT, apiKey, authenticated }
 public enum QuotaAvailability: String, Sendable, Codable { case available, unavailable, unsupportedVersion, signedOut, offline }
+public enum ProviderReadOutcome: String, Sendable {
+    case success, unavailable, authenticationRequired, permissionDenied, parseFailed, unsupportedVersion, stale
+}
+
+/// Describes data actually supplied by a provider; an App-side price estimate is not provider cost data.
+public struct ProviderCapability: OptionSet, Sendable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+    public static let quota = Self(rawValue: 1 << 0)
+    public static let tokenUsage = Self(rawValue: 1 << 1)
+    public static let session = Self(rawValue: 1 << 2)
+    public static let cost = Self(rawValue: 1 << 3)
+    public static let modelUsage = Self(rawValue: 1 << 4)
+}
+
+extension ProviderID {
+    /// Normalized Codex input includes cached tokens; Claude input is separate from cache.
+    public var inputIncludesCache: Bool { self == .codex }
+}
+
+public struct AppError: Error, Sendable {
+    public let userMessage: String
+    public let debugDetail: String
+    public let recoverySuggestion: String
+    public init(_ userMessage: String, debugDetail: String, recoverySuggestion: String) {
+        self.userMessage = userMessage
+        self.debugDetail = debugDetail
+        self.recoverySuggestion = recoverySuggestion
+    }
+}
 
 public struct ProviderStatus: Sendable {
     public var id: ProviderID
@@ -12,6 +42,8 @@ public struct ProviderStatus: Sendable {
     public var quotaAvailability: QuotaAvailability
     public var health: ConnectionHealth
     public var version: String?
+    public var readOutcome: ProviderReadOutcome = .unavailable
+    public var issue: AppError?
     public init(id: ProviderID) {
         self.id = id; displayName = id == .codex ? "Codex" : "Claude Code"
         authentication = .unknown; quotaAvailability = .unavailable; health = .syncing
@@ -27,10 +59,12 @@ public enum ProviderEvent: Sendable {
     case quota(QuotaSnapshot)
     case accountChanged
     case disconnected
+    case issue(AppError)
 }
 
 public protocol UsageProvider: Sendable {
     var id: ProviderID { get }
+    var capabilities: ProviderCapability { get }
     var events: AsyncStream<ProviderEvent> { get }
     func refresh() async -> ProviderRead
     func sourceRoots() async -> [URL]
@@ -60,7 +94,14 @@ public enum ExecutableLocator {
     }
 }
 
-public enum ProviderError: Error, Sendable { case notInstalled, disconnected, timeout, invalidResponse, remote(Int), processFailed }
+public enum ProviderError: Error, Sendable { case notInstalled, disconnected, timeout, invalidResponse, unsupportedVersion, remote(Int), processFailed }
+
+extension ProviderError {
+    var requiresAuthentication: Bool {
+        if case let .remote(code) = self { return code == 401 || code == 403 }
+        return false
+    }
+}
 
 public enum ProcessRunner {
     public static func run(_ executable: URL, arguments: [String], timeout: TimeInterval = 12, allowNonzero: Bool = false) async throws -> Data {

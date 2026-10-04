@@ -19,7 +19,7 @@ struct TokenFields: View {
         for metric in TokenMetric.allCases {
             let text = (fields[metric] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if text.isEmpty { continue }
-            guard let value = Int(text), value >= 0 else { throw DataValidationError.negativeTokens }
+            guard let value = Int64(text), value >= 0 else { throw DataValidationError.negativeTokens }
             result[metric] = value
         }
         return result

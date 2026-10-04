@@ -23,24 +23,40 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
     }
     func update() {
         guard let button = item.button else { return }
-        let count = model.menuWindows.count
-        let width: CGFloat
-        if model.selectedQuota.isStale && model.menuStyle != .icon {
-            width = 100
-        } else {
-            switch model.menuStyle {
-            case .icon: width = 25
-            case .minimal: width = count == 0 ? 112 : 75
-            case .quotaCountdown: width = 162
-            case .dualQuota: width = count >= 2 ? 168 : count == 1 ? 136 : 128
-            }
-        }
-        item.length = width
+        item.length = preferredWidth
+        let description = model.menuWindows.prefix(2).map { window in
+            "\(window.localizedName) \(Int(model.menuNumber(window).rounded()))%"
+        }.joined(separator: "，")
+        button.setAccessibilityLabel(description.isEmpty
+            ? "\(model.selectedStatus.displayName)，\(model.selectedStatus.health.localizedLabel)"
+            : "\(model.selectedStatus.displayName)，\(description)\(model.selectedQuota.isStale ? "，数据已过期" : "")")
         let view = label ?? ClickThroughHostingView(rootView: StatusLabel(model: model))
         view.rootView = StatusLabel(model: model)
         view.frame = button.bounds
         view.autoresizingMask = [.width, .height]
         if label == nil { button.addSubview(view); label = view }
+    }
+    private var preferredWidth: CGFloat {
+        let windows = Array(model.menuWindows.prefix(2))
+        if model.menuStyle == .icon { return 25 }
+        let font = NSFont.systemFont(ofSize: model.menuStyle == .minimal ? 11 : 10, weight: .medium)
+        func measured(_ text: String) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        }
+        let content: CGFloat
+        if model.selectedQuota.isStale, !windows.isEmpty {
+            content = measured("额度已过期")
+        } else if windows.isEmpty {
+            content = measured(model.selectedStatus.health.localizedLabel)
+        } else if model.menuStyle == .minimal {
+            content = measured("\(Int(model.menuNumber(windows[0]).rounded()))%")
+        } else if model.menuStyle == .quotaCountdown {
+            content = max(measured("\(windows[0].localizedName)  \(Int(model.menuNumber(windows[0]).rounded()))%"),
+                          measured(windows[0].resetsAt == nil ? "重置时间未提供" : "00:00:00"))
+        } else {
+            content = windows.map { measured($0.localizedName) + measured("100%") + 8 }.max() ?? 0
+        }
+        return min(230, max(38, 15 + 5 + content + 12))
     }
     @objc private func togglePopover() {
         guard let button = item.button else { return }

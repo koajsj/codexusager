@@ -12,7 +12,12 @@
 <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
 <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
 <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-<key>LSMinimumSystemVersion</key><string>14.6</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>dev.codexusager.app.connection</string>
+<key>CFBundleURLSchemes</key><array><string>codexusager</string></array>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+</dict></array>
 <key>NSHighResolutionCapable</key><true/>
 <key>UsageAppGroup</key><string>$(USAGE_APP_GROUP)</string>
 </dict></plist>

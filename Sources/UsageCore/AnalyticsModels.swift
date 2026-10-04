@@ -6,6 +6,11 @@ public enum TokenMetric: String, Codable, CaseIterable, Sendable, Identifiable {
 }
 
 public enum SafeCount {
+    public static func add(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (value, overflow) = max(0, lhs).addingReportingOverflow(max(0, rhs))
+        return overflow ? Int64.max : value
+    }
+    public static func sum(_ values: [Int64]) -> Int64 { values.reduce(0, add) }
     public static func add(_ lhs: Int, _ rhs: Int) -> Int {
         let (value, overflow) = max(0, lhs).addingReportingOverflow(max(0, rhs))
         return overflow ? Int.max : value
@@ -14,18 +19,18 @@ public enum SafeCount {
 }
 
 public struct TokenValues: Codable, Sendable, Equatable {
-    public var input: Int?
-    public var cacheRead: Int?
-    public var cacheWrite: Int?
-    public var output: Int?
-    public var reasoning: Int?
-    public var total: Int?
-    public init(input: Int? = nil, cacheRead: Int? = nil, cacheWrite: Int? = nil,
-                output: Int? = nil, reasoning: Int? = nil, total: Int? = nil) {
+    public var input: Int64?
+    public var cacheRead: Int64?
+    public var cacheWrite: Int64?
+    public var output: Int64?
+    public var reasoning: Int64?
+    public var total: Int64?
+    public init(input: Int64? = nil, cacheRead: Int64? = nil, cacheWrite: Int64? = nil,
+                output: Int64? = nil, reasoning: Int64? = nil, total: Int64? = nil) {
         self.input = input; self.cacheRead = cacheRead; self.cacheWrite = cacheWrite
         self.output = output; self.reasoning = reasoning; self.total = total
     }
-    public subscript(_ metric: TokenMetric) -> Int? {
+    public subscript(_ metric: TokenMetric) -> Int64? {
         get {
             switch metric {
             case .input: input; case .cacheRead: cacheRead; case .cacheWrite: cacheWrite
@@ -51,13 +56,13 @@ public struct TokenValues: Codable, Sendable, Equatable {
         if override.total == nil, componentsChanged {
             // Recalculate from complete components when possible. Otherwise adjust
             // the known source total by changes to fields that contribute to it.
-            if provider == .codex, let input = result.input, let output = result.output {
+            if provider.inputIncludesCache, let input = result.input, let output = result.output {
                 result.total = SafeCount.add(input, output)
             } else if provider == .claude, let input = result.input, let read = result.cacheRead,
                       let write = result.cacheWrite, let output = result.output {
                 result.total = SafeCount.sum([input, read, write, output])
             } else if var calculated = total {
-                let additive: [TokenMetric] = provider == .codex
+                let additive: [TokenMetric] = provider.inputIncludesCache
                     ? [.input, .output] : [.input, .cacheRead, .cacheWrite, .output]
                 for metric in additive {
                     guard let new = override[metric] else { continue }
@@ -73,7 +78,7 @@ public struct TokenValues: Codable, Sendable, Equatable {
     }
     public func validate(provider: ProviderID) throws {
         guard TokenMetric.allCases.allSatisfy({ self[$0].map { $0 >= 0 } ?? true }) else { throw DataValidationError.negativeTokens }
-        if provider == .codex, let input,
+        if provider.inputIncludesCache, let input,
            SafeCount.add(cacheRead ?? 0, cacheWrite ?? 0) > input { throw DataValidationError.cacheExceedsInput }
         if let output, let reasoning, reasoning > output { throw DataValidationError.reasoningExceedsOutput }
     }
@@ -82,7 +87,7 @@ public struct TokenValues: Codable, Sendable, Equatable {
 extension UsageRecord {
     public var tokens: TokenValues {
         let supported = availableMetrics.map(Set.init)
-        func value(_ metric: TokenMetric, _ count: Int) -> Int? {
+        func value(_ metric: TokenMetric, _ count: Int64) -> Int64? {
             if let supported { return supported.contains(metric) ? count : nil }
             // Old normalized rows cannot distinguish unsupported fields from genuine zero.
             return metric == .total || count > 0 ? count : nil
@@ -96,7 +101,7 @@ extension UsageRecord {
 public enum UsagePeriod: String, Codable, CaseIterable, Sendable, Identifiable {
     case today, week, month, year, all
     public var id: String { rawValue }
-    public func start(now: Date, calendar: Calendar = .current) -> Date? {
+    public func start(now: Date, calendar: Calendar = AnalyticsTimeContext().calendar) -> Date? {
         let today = calendar.startOfDay(for: now)
         switch self {
         case .today: return today
@@ -105,6 +110,16 @@ public enum UsagePeriod: String, Codable, CaseIterable, Sendable, Identifiable {
         case .year: return calendar.dateInterval(of: .year, for: now)?.start
         case .all: return nil
         }
+    }
+}
+
+/// A single calendar snapshot is shared by filtering, grouping and chart buckets.
+public struct AnalyticsTimeContext: Sendable {
+    public let calendar: Calendar
+    public init(timeZone: TimeZone = .autoupdatingCurrent) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        self.calendar = calendar
     }
 }
 
@@ -179,13 +194,14 @@ public struct ModelPrice: Codable, Sendable, Identifiable {
     }
     public func estimate(_ tokens: TokenValues) -> Double? {
         guard let input = tokens.input, let output = tokens.output,
+              TokenMetric.allCases.allSatisfy({ tokens[$0].map { $0 >= 0 } ?? true }),
               [inputPerMillion, cacheReadPerMillion, cacheWritePerMillion, outputPerMillion].allSatisfy({ $0.isFinite && $0 >= 0 }) else { return nil }
         if tokens.cacheRead == nil, cacheReadPerMillion != inputPerMillion { return nil }
         if tokens.cacheWrite == nil, cacheWritePerMillion != 0 { return nil }
         let cached = tokens.cacheRead ?? 0, write = tokens.cacheWrite ?? 0
-        let uncached = provider == .codex ? input - min(input, SafeCount.add(cached, write)) : input
+        let uncached = provider.inputIncludesCache ? input - min(input, SafeCount.add(cached, write)) : input
         let value = (Double(uncached) * inputPerMillion + Double(cached) * cacheReadPerMillion + Double(write) * cacheWritePerMillion + Double(output) * outputPerMillion) / 1_000_000
-        return value.isFinite ? value : nil
+        return value.isFinite && value >= 0 ? value : nil
     }
 }
 
@@ -211,12 +227,12 @@ public struct UsageEntry: Sendable, Identifiable {
 public struct TrendPoint: Sendable, Identifiable {
     public var id: Date { date }
     public var date: Date
-    public var tokens: Int
+    public var tokens: Int64
 }
 
 public struct ProviderTotal: Sendable, Identifiable {
     public var id: ProviderID
-    public var tokens: Int
+    public var tokens: Int64
     public var sessions: Int
 }
 
@@ -262,11 +278,11 @@ public struct AnalyticsSnapshot: Sendable {
     public var trend: [TrendPoint] = []
     public var past24Hours: [TrendPoint] = []
     public var providers: [ProviderTotal] = []
-    public var composition: [TokenMetric: Int] = [:]
+    public var composition: [TokenMetric: Int64] = [:]
     public var availableProjects: [String: String] = [:]
     public var availableModels: [String] = []
     public var today = TokenValues()
-    public var todayByProvider: [ProviderID: Int] = [:]
+    public var todayByProvider: [ProviderID: Int64] = [:]
     public var home = HomeSummary()
     public var health: [SourceHealth] = []
     public var adjustments: [UsageAdjustment] = []

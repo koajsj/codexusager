@@ -31,12 +31,13 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tag must be vMAJOR.MINOR.PATCH: $TAG_NAME" >&2
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-preview)?$ ]]; then
+            echo "Release tag must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-preview: $TAG_NAME" >&2
             exit 1
           fi
           app_version=$(xcodebuild -project CodexUsager.xcodeproj -target CodexUsager -configuration Release -showBuildSettings 2>/dev/null | awk '/^[[:space:]]*MARKETING_VERSION = / && !found { version=$3; found=1 } END { print version }')
-          if [[ "$app_version" != "${TAG_NAME#v}" ]]; then
+          tag_version="${TAG_NAME#v}"
+          if [[ "$app_version" != "${tag_version%-preview}" ]]; then
             echo "Tag $TAG_NAME does not match app MARKETING_VERSION $app_version" >&2
             exit 1
           fi
@@ -68,7 +69,8 @@ jobs:
           test -f "$bridge"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'dev.codexusager.app'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Contents/Info.plist")" = 'dev.codexusager.app.widget'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${TAG_NAME#v}"
+          tag_version="${TAG_NAME#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${tag_version%-preview}"
           for binary in "$app/Contents/MacOS/CodexUsager" "$widget/Contents/MacOS/CodexUsagerWidget" "$bridge"; do
             architectures=$(lipo -archs "$binary")
             [[ " $architectures " == *' arm64 '* && " $architectures " == *' x86_64 '* ]] || {
@@ -98,6 +100,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           name: CodexUsager ${{ github.ref_name }}
+          prerelease: ${{ endsWith(github.ref_name, '-preview') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |

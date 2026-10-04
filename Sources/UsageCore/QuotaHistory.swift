@@ -34,7 +34,7 @@ public struct PaceResult: Sendable {
     public var speed: Speed
     public var projectedRemaining: Double
     public var percentPerHour: Double
-    public var observedTokens: Int?
+    public var observedTokens: Int64?
     public var tokensPerHour: Double?
     public var sampleHours: Double
 }
@@ -43,7 +43,7 @@ public enum PaceCalculator {
     /// Uses only observations from the current reset cycle. Token counts describe
     /// the same interval, but never convert into a quota percentage.
     public static func calculate(current: QuotaWindow, history: [QuotaHistoryPoint],
-                                 observedTokens: Int?, now: Date = .now) -> PaceResult? {
+                                 observedTokens: Int64?, now: Date = .now) -> PaceResult? {
         guard let reset = current.resetsAt, reset > now,
               current.remainingPercent.isFinite, (0...100).contains(current.remainingPercent) else { return nil }
         let candidates = history.filter {
@@ -64,11 +64,15 @@ public enum PaceCalculator {
         guard hours.isFinite, hours > 0 else { return nil }
         let perHour = max(0, (first.remainingPercent - current.remainingPercent) / hours)
         let untilReset = reset.timeIntervalSince(now) / 3600
-        let projected = max(0, current.remainingPercent - perHour * untilReset)
+        guard perHour.isFinite, untilReset.isFinite, untilReset >= 0 else { return nil }
+        let projected = min(100, max(0, current.remainingPercent - perHour * untilReset))
+        guard projected.isFinite else { return nil }
         let speed: PaceResult.Speed = perHour < 0.1 ? .steady :
             (perHour * untilReset >= current.remainingPercent ? .fast : .normal)
+        let nonnegativeTokens = observedTokens.flatMap { $0 >= 0 ? $0 : nil }
+        let rate = nonnegativeTokens.map { Double($0) / hours }.flatMap { $0.isFinite ? $0 : nil }
         return PaceResult(speed: speed, projectedRemaining: projected,
-                          percentPerHour: perHour, observedTokens: observedTokens,
-                          tokensPerHour: observedTokens.map { Double($0) / hours }, sampleHours: hours)
+                          percentPerHour: perHour, observedTokens: nonnegativeTokens,
+                          tokensPerHour: rate, sampleHours: hours)
     }
 }

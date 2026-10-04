@@ -10,7 +10,7 @@ struct ChatGPTConnectionControls: View {
                 Button("退出 ChatGPT…") { confirmLogout = true }
                     .disabled(model.authenticationViewModel.isWorking)
             } else {
-                Button("登录 ChatGPT") { model.loginChatGPT() }
+                Button(model.codexStatus.health == .reconnectRequired || model.codexStatus.health == .signedOut ? "重新连接 ChatGPT" : "登录 ChatGPT") { model.loginChatGPT() }
                     .disabled(model.authenticationViewModel.isWorking || model.isRefreshing)
             }
             if model.authenticationViewModel.isWorking {

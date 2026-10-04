@@ -1,11 +1,11 @@
-# CodexUsager 1.0.0 发布准备
+# CodexUsager 1.0.1 发布准备
 
 本文件描述未签名预览与后续签名发布流程。仓库已配置 tag 自动构建、DMG 与 SHA-256 上传；签名、公证和安装验证是独立门槛。
 
 ## 发布入口
 
 - 唯一发布入口：`CodexUsager.xcodeproj` → `CodexUsager` Application Target → `CodexUsager` 共享 Scheme。App 产品类型为 `com.apple.product-type.application`，产物为 `CodexUsager.app`。
-- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.0（构建号 2）、macOS 15.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
+- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.1（构建号 3）、macOS 15.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
 - `UsageCore` 静态链接到 App 与 Bridge，不要求额外的动态 Frameworks 目录。App 图标和字符串资源由 Xcode 构建，不手工生成 Info.plist。
 - SwiftPM App executableTarget 只用于开发，不得把 `.build` 下的 Unix 可执行文件当作发布 App。
 - 发布前检查 `main` 工作区、提交与版本，确认 `origin` 指向 `https://github.com/koajsj/codexusager.git`。先审查未提交修改，避免发布遗漏。
@@ -14,7 +14,7 @@
 
 ```sh
 Scripts/package_app.sh release --universal --unsigned
-Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.0-preview.dmg --unsigned
+Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.1-preview.dmg --unsigned
 ```
 
 先创建输出目录 `dist`。两个脚本均拒绝覆盖已有产物。App 使用 Xcode Release 配置，保留 Widget、App Group 配置及 Hardened Runtime 设置；`--unsigned` 只在本次构建关闭代码签名，不修改工程能力。DMG 包含完整 App 与 Applications 入口，生成同名 `.sha256` 文件。
@@ -44,8 +44,14 @@ Apple 的 [公证说明](https://developer.apple.com/documentation/security/nota
 
 ## 本轮 Preview
 
-产物命名为 `CodexUsager-v1.0.0-preview.dmg` 与同名 `.sha256`；Bundle 的 Marketing Version 保持数字 `1.0.0`，构建号为 `2`。使用已推送的最新 main 和新的 DerivedData 生成；本地打包不创建 tag，不发布或覆盖 GitHub Release。
+产物命名为 `CodexUsager-v1.0.1-preview.dmg` 与同名 `.sha256`；Bundle 的 Marketing Version 保持数字 `1.0.1`，构建号为 `3`。使用已推送的最新 main 和新的 DerivedData 生成；新 tag `v1.0.1-preview` 通过 Actions 发布独立的未签名预览版，已有 tag/Release 不移动、不覆盖。
 
 Actions 兼容数字版本 tag 与 `-preview` 后缀，并将后者标记为 prerelease。只有推送 tag 才触发发布。已有 v1.0.0 tag/Release 保留，不移动或覆盖。
 
 登录、取消、登出、Keychain 权限、原文件登录重新连接、官方回调与附加浏览器反馈页需要真实来源验证。macOS 15 Sequoia 和 macOS 26 Tahoe 的布局、前后台刷新策略、菜单栏与 Widget 需分别运行验证。构建或合成 RPC 测试不代表这些流程已完成验收。
+
+## 发布门禁
+
+Actions 的 `verify` job 先执行 `swift test`（不启用真实 Provider / 本地会话检查）及工程生成器一致性检查。`release` 必须依赖 `verify` 成功，才允许 Universal Xcode Application 构建、完整 Bundle 检查、DMG / SHA256 和 Release 上传。验证 job 仅有 contents: read，只有发布 job 有 contents: write。所有第三方 Actions 固定到 commit SHA，Xcode 固定到此前成功构建的 26.6。
+
+本地生成器验证：运行两次 `python3 Scripts/generate_xcode_project.py` 比较文件摘要；已提交状态下再次生成，`git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj` 必须为空。

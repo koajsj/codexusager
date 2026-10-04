@@ -5,7 +5,7 @@ CodexUsager 是原生 macOS AI Coding 用量伴侣。Codex App Server 提供账�
 - macOS Sequoia **15.0+**；支持 Apple Silicon，发布构建可生成 Universal 2（arm64 + x86_64）。
 - SwiftUI + AppKit 菜单栏 + SwiftData + Swift Charts；无 Electron、Tauri、第三方 UI 框架或自建服务。
 - 简体中文为默认语言，界面使用系统色与 SF Symbols。
-- 当前工程版本为 **1.0.0**；签名、安装和业务运行行为需按发布清单验证。
+- 当前工程版本为 **1.0.1**（Preview：`v1.0.1-preview`）；签名、安装和业务运行行为需按发布清单验证。
 
 ## 安装与构建
 
@@ -50,3 +50,5 @@ Scripts/package_app.sh release --universal --unsigned
 ## 开源协作
 
 项目使用 [MIT License](LICENSE)。提交改动前请阅读 [CONTRIBUTING.md](docs/CONTRIBUTING.md)；安全问题请按 [SECURITY.md](docs/SECURITY.md) 私下报告。版本变化见 [CHANGELOG.md](docs/CHANGELOG.md)。
+
+菜单栏打开时先显示缓存：额度最后成功更新超过 5 分钟才异步刷新额度，不重新导入会话。主窗口不活跃时保留额度轮询，暂停周期性历史扫描；手动刷新和启动索引仍可使用。

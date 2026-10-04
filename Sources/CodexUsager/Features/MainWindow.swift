@@ -89,6 +89,7 @@ struct MainWindow: View {
                             } else { Image(systemName: "arrow.clockwise") }
                         }
                         .help("刷新数据")
+                        .keyboardShortcut("r", modifiers: .command)
                         .disabled(model.isRefreshing || model.isImporting)
                     }
                     if geometry.size.width >= 950 {
@@ -194,6 +195,7 @@ private final class WindowTrackingView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { return }
+        window.identifier = NSUserInterfaceItemIdentifier("main")
         window.contentMinSize = NSSize(width: 540, height: 390)
         let saved = UserDefaults.standard.object(forKey: "NSWindow Frame CodexUsagerMainWindow") != nil
         window.setFrameAutosaveName("CodexUsagerMainWindow")

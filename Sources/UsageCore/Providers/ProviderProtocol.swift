@@ -102,28 +102,3 @@ extension ProviderError {
         return false
     }
 }
-
-public enum ProcessRunner {
-    public static func run(_ executable: URL, arguments: [String], timeout: TimeInterval = 12, allowNonzero: Bool = false) async throws -> Data {
-        try await Task.detached(priority: .utility) {
-            let process = Process()
-            process.executableURL = executable; process.arguments = arguments
-            process.environment = ExecutableLocator.environment(for: executable)
-            process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-            let pipe = Pipe(); process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
-            process.standardInput = FileHandle.nullDevice
-            try process.run()
-            let timeoutWork = DispatchWorkItem { if process.isRunning { process.terminate() } }
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: timeoutWork)
-            defer { timeoutWork.cancel(); if process.isRunning { process.terminate() }; try? pipe.fileHandleForReading.close() }
-            var output = Data()
-            while let chunk = try pipe.fileHandleForReading.read(upToCount: 16 * 1024), !chunk.isEmpty {
-                guard output.count + chunk.count <= 1024 * 1024 else { throw ProviderError.invalidResponse }
-                output.append(chunk)
-            }
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 || allowNonzero else { throw ProviderError.processFailed }
-            return output
-        }.value
-    }
-}

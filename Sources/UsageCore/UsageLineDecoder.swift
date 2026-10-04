@@ -9,17 +9,18 @@ public enum UsageLineDecoder {
         return decode(root, provider: provider, sessionID: sessionID, sourceFile: sourceFile)
     }
 
-    static func decode(_ root: [String: Any], provider: ProviderID, sessionID: String, sourceFile: String) -> UsageRecord? {
+    static func decode(_ root: [String: Any], provider: ProviderID, sessionID: String, sourceFile: String, contextModel: String? = nil) -> UsageRecord? {
         let kind = root["type"] as? String ?? ""
         var payload: [String: Any] = [:]
         var usage: [String: Any] = [:]
         var sourceID: String?
-        var model: String?
+        var model: String? = contextModel
         var eventType = kind
         var actualSession = root["sessionId"] as? String ?? sessionID
         if provider == .codex {
             guard let p = root["payload"] as? [String: Any] else { return nil }
             payload = p
+            model = p["model"] as? String ?? model
             if kind == "event_msg", p["type"] as? String == "token_count" {
                 guard let info = p["info"] as? [String: Any], let last = info["last_token_usage"] as? [String: Any] else { return nil }
                 usage = last
@@ -72,15 +73,30 @@ public enum UsageLineDecoder {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let timestamp = fractional.date(from: dateText) ?? ISO8601DateFormatter().date(from: dateText) else { return nil }
-        let fingerprintSource = "\(provider.rawValue)|\(actualSession)|\(root["timestamp"] ?? "")|\(input)|\(cached)|\(cacheWrite)|\(output)|\(eventType)"
-        let fingerprint = SHA256.hash(data: Data(fingerprintSource.utf8)).map { String(format: "%02x", $0) }.joined()
-        let identity = sourceID.map { "\(provider.rawValue):\(actualSession):\($0)" } ?? fingerprint
-        return UsageRecord(id: identity, provider: provider, sourceEventID: sourceID, fingerprint: fingerprint,
+        model = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if model?.isEmpty == true { model = nil }
+        var record = UsageRecord(id: sourceID.map { "\(provider.rawValue):\(actualSession):\($0)" } ?? "",
+                           provider: provider, sourceEventID: sourceID, fingerprint: "",
                            timestamp: timestamp, sessionID: actualSession,
                            projectID: (root["cwd"] as? String) ?? (payload["cwd"] as? String), model: model,
                            inputTokens: input, cachedInputTokens: cached, cacheWriteTokens: cacheWrite,
                            outputTokens: output, reasoningTokens: reasoning, totalTokens: total,
                            sourceFile: sourceFile, importedAt: .now, eventType: eventType, availableMetrics: available)
+        record.fingerprint = fallbackFingerprint(record)
+        if sourceID == nil { record.id = record.fingerprint }
+        return record
+
+    }
+    /// Also used to rebind existing user corrections when old cursors are reindexed.
+    static func fallbackFingerprint(_ record: UsageRecord) -> String {
+        let model = record.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let fields = [record.provider.rawValue, record.sessionID, String(record.timestamp.timeIntervalSince1970),
+                      model, String(record.inputTokens), String(record.cachedInputTokens), String(record.cacheWriteTokens),
+                      String(record.outputTokens), String(record.reasoningTokens), String(record.totalTokens), record.eventType]
+        // Length-prefixing avoids delimiter collisions; normalized semantic fields
+        // make the digest independent of JSON formatting/timestamp spelling.
+        let source = fields.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
 

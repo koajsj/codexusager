@@ -3,6 +3,18 @@ import Observation
 import UsageCore
 
 @MainActor @Observable final class RefreshViewModel {
+    var schedule = RefreshSchedule()
+    private var pollingTask: Task<Void, Never>?
+    func startPolling(_ tick: @escaping @MainActor () -> Void) {
+        guard pollingTask == nil else { return }
+        pollingTask = Task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                tick()
+            }
+        }
+    }
+    func stopPolling() { pollingTask?.cancel(); pollingTask = nil }
     var isRefreshing = false
     var isImporting = false
     var lastRefresh: Date?

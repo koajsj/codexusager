@@ -294,7 +294,7 @@ public struct SourceCenterSummary: Sendable {
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
         var healthRow = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
         let previousHealth = try healthRow.map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
-        if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 2,
+        if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 3,
            cursor.offset == cursor.fileSize,
            (attrs[.size] as? NSNumber)?.uint64Value == cursor.fileSize,
            attrs[.modificationDate] as? Date == cursor.modifiedAt,
@@ -305,7 +305,10 @@ public struct SourceCenterSummary: Sendable {
             let result = try JSONLImporter.scan(url: url, provider: provider, cursor: cursor, maxRecords: 512, isCancelled: { Task.isCancelled })
             try Task.checkCancellation()
             do {
-                if result.rebuilt { try removeSource(path); changed = true }
+                if result.rebuilt {
+                    if cursor?.decoderRevision != 3 { try rebindFallbackAdjustments(path: path) }
+                    try removeSource(path); changed = true
+                }
                 var batch: [String: UsageRecord] = [:]
                 for record in result.records { UsageDeduplicator.merge(record, into: &batch) }
                 let ids = Array(batch.keys)
@@ -367,6 +370,27 @@ public struct SourceCenterSummary: Sendable {
         try modelContext.save()
     }
 
+    /// Preserve explicit user corrections when the deterministic fallback changes.
+    /// Only a matching original record is rebound; existing target corrections win.
+    private func rebindFallbackAdjustments(path: String) throws {
+        let links = try modelContext.fetch(FetchDescriptor<StoredSourceLink>(predicate: #Predicate { $0.path == path }))
+        for link in links {
+            try Task.checkCancellation()
+            let oldID = link.usageID
+            guard let row = try modelContext.fetch(FetchDescriptor<StoredUsage>(predicate: #Predicate { $0.stableID == oldID })).first,
+                  let adjustmentRow = try modelContext.fetch(FetchDescriptor<StoredAdjustment>(predicate: #Predicate { $0.recordID == oldID })).first else { continue }
+            let record = try JSONDecoder().decode(UsageRecord.self, from: row.payload)
+            var adjustment = try JSONDecoder().decode(UsageAdjustment.self, from: adjustmentRow.payload)
+            guard record.sourceEventID == nil, record.tokens == adjustment.original else { continue }
+            let newID = UsageLineDecoder.fallbackFingerprint(record)
+            guard newID != oldID,
+                  try modelContext.fetchCount(FetchDescriptor<StoredAdjustment>(predicate: #Predicate { $0.recordID == newID })) == 0 else { continue }
+            adjustment.id = newID; adjustment.recordID = newID
+            adjustmentRow.recordID = newID
+            adjustmentRow.payload = try JSONEncoder().encode(adjustment)
+        }
+    }
+
     private func upsert(_ record: UsageRecord, existing: StoredUsage?, hasSourceLink: Bool) throws {
         let row: StoredUsage
         if let existing { row = existing }
@@ -421,6 +445,13 @@ public struct SourceCenterSummary: Sendable {
             row.payload = try JSONEncoder().encode(cached)
             changed = true
         }
+        for row in try modelContext.fetch(FetchDescriptor<StoredQuota>()) {
+            var cached = try JSONDecoder().decode(QuotaSnapshot.self, from: row.payload)
+            guard cached.accountID != nil else { continue }
+            cached.accountID = nil
+            row.payload = try JSONEncoder().encode(cached)
+            changed = true
+        }
         if changed {
             do { try modelContext.save() } catch { modelContext.rollback(); throw error }
         }
@@ -428,7 +459,9 @@ public struct SourceCenterSummary: Sendable {
 
     public func saveQuota(_ snapshot: QuotaSnapshot) throws {
         let id = snapshot.provider.rawValue
-        let data = try JSONEncoder().encode(snapshot)
+        var cached = snapshot
+        cached.accountID = nil
+        let data = try JSONEncoder().encode(cached)
         if let row = try modelContext.fetch(FetchDescriptor<StoredQuota>(predicate: #Predicate { $0.provider == id })).first { row.payload = data }
         else { modelContext.insert(StoredQuota(provider: id, payload: data)) }
         try modelContext.save()
@@ -443,8 +476,7 @@ public struct SourceCenterSummary: Sendable {
             modelContext.delete(old)
         }
         var seenWindows: Set<String> = []
-        for window in snapshot.windows where window.remainingPercent.isFinite && window.usedPercent.isFinite &&
-            (0...100).contains(window.remainingPercent) && (0...100).contains(window.usedPercent) {
+        for window in snapshot.windows where window.hasValidPercentages {
             let windowID = window.id
             guard seenWindows.insert(windowID).inserted else { continue }
             var descriptor = FetchDescriptor<StoredQuotaHistory>(predicate: #Predicate {

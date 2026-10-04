@@ -69,8 +69,6 @@ private actor WidgetSnapshotPublisher {
     var notifyClaude25: Bool { get { settingsViewModel.notifyClaude25 } set { settingsViewModel.notifyClaude25 = newValue; notificationChanged(.notifyClaude25, enabled: newValue) } }
     var openMainWindow: () -> Void = {}
     var refreshPolicy: RefreshPolicy { get { settingsViewModel.refreshPolicy } set { settingsViewModel.refreshPolicy = newValue } }
-    private var lastQuotaAttempt: Date?
-    private var lastScanAttempt: Date?
     private var lastActivationRefresh: Date?
     private let refreshService = DataRefreshService()
     private let quotaNotifier = QuotaNotifier()
@@ -79,7 +77,6 @@ private actor WidgetSnapshotPublisher {
     private var statusBar: StatusBarController?
     private var refreshTask: Task<Void, Never>?
     private var importTask: Task<Void, Never>?
-    private var pollingTask: Task<Void, Never>?
     private var resetTask: Task<Void, Never>?
     private var quotaEventsTask: Task<Void, Never>?
     private var analyticsTask: Task<Void, Never>?
@@ -107,7 +104,7 @@ private actor WidgetSnapshotPublisher {
     var overallHealth: ConnectionHealth {
         if isRefreshing { return .syncing }
         let states = [codexStatus.health, claudeStatus.health]
-        for state in [ConnectionHealth.connected, .syncing, .stale, .offline, .parseError, .signedOut, .unavailable] {
+        for state in [ConnectionHealth.connected, .syncing, .stale, .reconnectRequired, .offline, .parseError, .signedOut, .unavailable] {
             if states.contains(state) { return state }
         }
         return .notInstalled
@@ -232,9 +229,18 @@ private actor WidgetSnapshotPublisher {
         lastActivationRefresh = now
         if refreshPolicy != .manual { refreshAll() }
     }
+    func refreshQuotaIfIdle() {
+        guard refreshTask == nil else { return }
+        refreshAll()
+    }
+    func refreshMenuQuotaIfNeeded() {
+        let state = selectedQuota
+        let success = state.snapshot?.windows.map(\.fetchedAt).min()
+        if RefreshSchedule.menuQuotaIsDue(lastSuccess: success, now: .now) { refreshQuotaIfIdle() }
+    }
     func refreshAll() {
         if refreshTask != nil { pendingRefresh = true; return }
-        lastQuotaAttempt = .now
+        refreshViewModel.schedule.lastQuotaAttempt = .now
         refreshTask = Task {
             repeat {
                 pendingRefresh = false; isRefreshing = true
@@ -264,7 +270,7 @@ private actor WidgetSnapshotPublisher {
         var nextStatus = read.status
         if let issue = nextStatus.issue { errorCenter.report(issue, for: .provider(nextStatus.id)) }
         else { errorCenter.clear(.provider(nextStatus.id)) }
-        if ([.offline, .parseError, .stale].contains(nextStatus.health) || nextStatus.readOutcome == .unsupportedVersion),
+        if ([.offline, .parseError, .stale, .unavailable].contains(nextStatus.health) || nextStatus.readOutcome == .unsupportedVersion),
            nextStatus.account == nil, old.account != nil {
             nextStatus.account = old.account
             nextStatus.authentication = old.authentication
@@ -358,29 +364,26 @@ private actor WidgetSnapshotPublisher {
         refreshAll()
     }
     private func startPolling() {
-        guard pollingTask == nil else { return }
-        pollingTask = Task {
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
-                let now = Date()
-                let remaining = [codexQuota, claudeQuota].filter { !$0.isStale }
-                    .flatMap { $0.snapshot?.windows ?? [] }.map(\.remainingPercent).min()
-                if let interval = refreshPolicy.quotaInterval(remaining: remaining),
-                   lastQuotaAttempt.map({ now.timeIntervalSince($0) >= interval }) ?? true { refreshAll() }
-                if let interval = refreshPolicy.scanInterval,
-                   lastScanAttempt.map({ now.timeIntervalSince($0) >= interval }) ?? true { importSources() }
-                let today = AnalyticsTimeContext().calendar.startOfDay(for: .now)
-                if hasIndexed, lastAnalyticsDay != today { reloadAnalytics() }
-                for provider in ProviderID.allCases {
-                    if let snapshot = quota(provider).snapshot,
-                       Date().timeIntervalSince(snapshot.fetchedAt) > QuotaFreshness.maximumAge ||
-                       snapshot.windows.contains(where: { Date().timeIntervalSince($0.fetchedAt) > QuotaFreshness.maximumAge }) {
-                        if provider == .codex { codexQuota.markFailure("stale") } else { claudeQuota.markFailure("stale") }
-                    }
-                }
-                statusBar?.update(); publishWidget()
+        refreshViewModel.startPolling { [weak self] in self?.poll() }
+    }
+    private func poll() {
+        let now = Date()
+        let remaining = [codexQuota, claudeQuota].filter { !$0.isStale }
+            .flatMap { $0.snapshot?.windows ?? [] }.map(\.remainingPercent).min()
+        if refreshViewModel.schedule.quotaIsDue(policy: refreshPolicy, remaining: remaining, now: now) { refreshQuotaIfIdle() }
+        // A menu popover/Settings window never qualifies as the main window.
+        let mainActive = NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isKeyWindow && $0.isVisible && !$0.isMiniaturized }
+        if refreshViewModel.schedule.scanIsDue(policy: refreshPolicy, mainWindowActive: mainActive, now: now) { importSources() }
+        let today = AnalyticsTimeContext().calendar.startOfDay(for: now)
+        if hasIndexed, lastAnalyticsDay != today { reloadAnalytics() }
+        for provider in ProviderID.allCases {
+            if let snapshot = quota(provider).snapshot,
+               now.timeIntervalSince(snapshot.fetchedAt) > QuotaFreshness.maximumAge ||
+               snapshot.windows.contains(where: { now.timeIntervalSince($0.fetchedAt) > QuotaFreshness.maximumAge }) {
+                if provider == .codex { codexQuota.markFailure("stale") } else { claudeQuota.markFailure("stale") }
             }
         }
+        statusBar?.update(); publishWidget()
     }
     private func scheduleResetRefresh() {
         resetTask?.cancel()
@@ -399,7 +402,7 @@ private actor WidgetSnapshotPublisher {
     }
     func importSources() {
         guard importTask == nil, let repository else { return }
-        lastScanAttempt = .now
+        refreshViewModel.schedule.lastScanAttempt = .now
         isImporting = true
         importTask = Task {
             var changed = !hasIndexed
@@ -648,7 +651,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     func shutdown() {
-        refreshTask?.cancel(); importTask?.cancel(); pollingTask?.cancel(); resetTask?.cancel()
+        refreshTask?.cancel(); importTask?.cancel(); refreshViewModel.stopPolling(); resetTask?.cancel()
         quotaEventsTask?.cancel(); analyticsTask?.cancel(); detailTask?.cancel(); widgetTask?.cancel()
         sourceSummaryTask?.cancel()
         restoredHistoryTask?.cancel()

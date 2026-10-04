@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ProviderID: String, Codable, CaseIterable, Sendable { case codex, claude }
-public enum ConnectionHealth: String, Codable, Sendable { case notInstalled, signedOut, connected, syncing, offline, unavailable, stale, parseError }
+public enum ConnectionHealth: String, Codable, Sendable { case notInstalled, signedOut, connected, syncing, offline, unavailable, stale, parseError, reconnectRequired }
 
 public struct AccountProfile: Codable, Sendable {
     public var provider: ProviderID
@@ -33,10 +33,17 @@ public struct QuotaWindow: Codable, Identifiable, Sendable, Equatable {
     public var fetchedAt: Date
     public var source: String
 
+    public var isSpendLimit: Bool {
+        limitID == "claude" && slot == "spend_limit" && source == "claude-statusline"
+    }
+    public var isOverLimit: Bool { isSpendLimit && usedPercent > 100 }
+    public static func validPercentages(used: Double, remaining: Double, allowsOverage: Bool) -> Bool {
+        guard used.isFinite, remaining.isFinite, used >= 0, (0...100).contains(remaining),
+              allowsOverage || used <= 100 else { return false }
+        return abs(remaining - max(0, 100 - used)) < 0.01
+    }
     public var hasValidPercentages: Bool {
-        usedPercent.isFinite && remainingPercent.isFinite &&
-        (0...100).contains(usedPercent) && (0...100).contains(remainingPercent) &&
-        abs(usedPercent + remainingPercent - 100) < 0.01
+        Self.validPercentages(used: usedPercent, remaining: remainingPercent, allowsOverage: isSpendLimit)
     }
 
     public func isAwaitingRefresh(at now: Date) -> Bool {

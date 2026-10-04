@@ -25,7 +25,7 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
         guard let button = item.button else { return }
         item.length = preferredWidth
         let description = model.menuWindows.prefix(2).map { window in
-            "\(window.localizedName) \(Int(model.menuNumber(window).rounded()))%"
+            "\(window.localizedName) \(model.menuNumber(window).formatted(.number.precision(.fractionLength(0))))%"
         }.joined(separator: "，")
         button.setAccessibilityLabel(description.isEmpty
             ? "\(model.selectedStatus.displayName)，\(model.selectedStatus.health.localizedLabel)"
@@ -49,19 +49,22 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
         } else if windows.isEmpty {
             content = measured(model.selectedStatus.health.localizedLabel)
         } else if model.menuStyle == .minimal {
-            content = measured("\(Int(model.menuNumber(windows[0]).rounded()))%")
+            content = measured("\(model.menuNumber(windows[0]).formatted(.number.precision(.fractionLength(0))))%")
         } else if model.menuStyle == .quotaCountdown {
-            content = max(measured("\(windows[0].localizedName)  \(Int(model.menuNumber(windows[0]).rounded()))%"),
+            content = max(measured("\(windows[0].localizedName)  \(model.menuNumber(windows[0]).formatted(.number.precision(.fractionLength(0))))%"),
                           measured(windows[0].resetsAt == nil ? "重置时间未提供" : "00:00:00"))
         } else {
-            content = windows.map { measured($0.localizedName) + measured("100%") + 8 }.max() ?? 0
+            content = windows.map { measured($0.localizedName) + measured("\(model.menuNumber($0).formatted(.number.precision(.fractionLength(0))))%") + 8 }.max() ?? 0
         }
         return min(230, max(38, 15 + 5 + content + 12))
     }
     @objc private func togglePopover() {
         guard let button = item.button else { return }
         if popover.isShown { popover.performClose(nil) }
-        else { popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY); NSApp.activate(ignoringOtherApps: true) }
+        else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            model.refreshMenuQuotaIfNeeded()
+        }
     }
 }
 
@@ -123,7 +126,7 @@ private struct StatusLabel: View {
             (model.selectedQuota.isStale ? "，上次已知值" : ""))
     }
     private func number(_ window: QuotaWindow) -> String {
-        "\(Int(model.menuNumber(window).rounded()))%"
+        "\(model.menuNumber(window).formatted(.number.precision(.fractionLength(0))))%"
     }
 }
 
@@ -186,7 +189,7 @@ private struct MenuPopover: View {
             HStack {
                 Button("打开主窗口") { model.openMainWindow() }
                 Spacer()
-                Button("刷新") { model.refreshAll(); model.importSources() }
+                Button("刷新额度") { model.refreshQuotaIfIdle() }
             }
         }
         .padding(16)
@@ -219,9 +222,12 @@ struct QuotaRow: View {
             HStack {
                 Text(window.localizedName).font(.subheadline).lineLimit(1)
                 Spacer()
-                Text(window.remainingPercent / 100, format: .percent.precision(.fractionLength(0)))
+                Text(window.isOverLimit ? "\(window.usedPercent.formatted(.number.precision(.fractionLength(0))))% 已用" : "\(window.remainingPercent.formatted(.number.precision(.fractionLength(0))))%")
                     .font(.system(.headline, design: .rounded)).monospacedDigit()
                     .contentTransition(reduceMotion ? .identity : .numericText())
+            }
+            if window.isOverLimit {
+                Text("已超出限额").font(.caption).foregroundStyle(.orange)
             }
             ProgressView(value: window.remainingPercent, total: 100)
                 .tint(.blue)

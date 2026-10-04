@@ -10,10 +10,8 @@ import UsageCore
                 data.append(part)
             }
             guard let executable = ExecutableLocator.locate("claude") else { print("额度暂不可用"); return }
-            let auth = try await ProcessRunner.run(executable, arguments: ["auth", "status"], allowNonzero: true)
-            guard let object = try JSONSerialization.jsonObject(with: auth) as? [String: Any],
-                  object["loggedIn"] as? Bool == true, let email = object["email"] as? String else { print("额度暂不可用"); return }
-            let saved = try ClaudeQuotaBridge.capture(data, accountIdentity: email)
+            guard let key = try await ClaudeBridgeAccountCache.resolve(executable: executable) else { print("额度暂不可用"); return }
+            let saved = try ClaudeQuotaBridge.captureBound(data, accountKey: key)
             // A minimal status line remains visible when this helper is used as the command.
             print(saved ? "额度已同步" : "额度暂不可用")
         } catch { print("用量快照暂不可用") }

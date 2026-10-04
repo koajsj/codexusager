@@ -49,7 +49,9 @@ public actor JSONRPCProcess {
             await self?.didDisconnect(generation: currentGeneration)
         }
         do {
-            _ = try await request("initialize", parameters: Data(#"{"clientInfo":{"name":"codexusager","title":"CodexUsager","version":"1.0.0"}}"#.utf8))
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+            let info = ["clientInfo": ["name": "codexusager", "title": "CodexUsager", "version": version]]
+            _ = try await request("initialize", parameters: JSONEncoder().encode(info))
             try send(["method": "initialized"])
         } catch { stop(); throw error }
     }

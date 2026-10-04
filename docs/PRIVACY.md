@@ -21,3 +21,11 @@ Welcome completion and source synchronization/scan timestamps are stored locally
 Browser login uses official Codex OAuth through the external default browser. CodexUsager forces its credential backend to `keyring` (macOS Keychain), without plain-file fallback; official Codex owns token refresh and storage. The app never receives the OAuth code or token. It does not inspect or migrate existing `auth.json`. Signing out affects official Codex Keychain login for the same CODEX_HOME and requires confirmation; usage history remains. macOS may request Keychain permissions.
 
 The browser feedback listener is a temporary 127.0.0.1-only page with no-store headers and no third-party assets. It shows a safe success/failure message, not identity, tokens, callback URLs or original errors. It expires after two minutes and saves no requests, cookies or page state. The official login callback remains separate. Refresh policy is an allowlisted preference in backups; authentication is excluded.
+
+## 1.0.1 数据可靠性修复
+
+持久化额度只保留必要的哈希 accountKey，原始 accountID 在保存前及旧缓存启动读取时清除。额度故障处理仅保存错误类型/操作名，不保存或显示 RPC error data、远端正文。
+
+Claude status-line helper 的账号绑定缓存仅含哈希账号标识与时间，最多复用 15 分钟。缓存还要求可观察的凭据变更元数据没有晚于缓存：只查询文件修改时间或 Keychain 属性，不读凭据正文、不允许 Keychain 交互弹窗。自定义配置、外部认证环境或元数据不可确认时仍执行官方 `claude auth status`，不复用绑定。账号切换后的快照仍必须与 Provider 当前确认的哈希账号一致。
+
+备份继续不包含账号缓存、凭据、原始会话、Prompt、Response；用户主动输入的备注及项目路径可能包含个人信息，导出前应自行确认。模拟 secret marker 测试覆盖环境中的私密文件/偏好及原始 accountID，不能替代对用户输入自由文本的人工检查。

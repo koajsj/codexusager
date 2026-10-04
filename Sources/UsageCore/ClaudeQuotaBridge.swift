@@ -15,7 +15,12 @@ public enum ClaudeQuotaBridge {
     public static func location() -> URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/CodexUsager/claude-quota.json")
     }
-    @discardableResult public static func capture(_ data: Data, accountIdentity: String, now: Date = .now) throws -> Bool {
+    @discardableResult public static func capture(_ data: Data, accountIdentity: String, now: Date = .now, at url: URL = location()) throws -> Bool {
+        guard let key = AccountBinding.key(provider: .claude, identity: accountIdentity) else { return false }
+        return try captureBound(data, accountKey: key, now: now, at: url)
+    }
+    @discardableResult public static func captureBound(_ data: Data, accountKey: String, now: Date = .now, at url: URL = location()) throws -> Bool {
+        guard ClaudeBridgeAccountCache.validKey(accountKey) else { throw ProviderError.invalidResponse }
         guard data.count <= 2 * 1024 * 1024,
               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ProviderError.invalidResponse }
         guard let rates = object["rate_limits"] as? [String: Any] else { return false }
@@ -25,19 +30,17 @@ public enum ClaudeQuotaBridge {
                   let number = value["used_percentage"] as? NSNumber,
                   CFGetTypeID(number) != CFBooleanGetTypeID() else { continue }
             let used = number.doubleValue
-            guard used.isFinite, (0...100).contains(used) else { continue }
+            guard used.isFinite, used >= 0, key == "spend_limit" || used <= 100 else { continue }
             let reset = (value["resets_at"] as? NSNumber).flatMap {
                 CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0.doubleValue
             }
             windows.append(QuotaWindow(limitID: "claude", slot: key, limitName: key == "spend_limit" ? "消费限额" : nil,
-                durationMinutes: duration == 0 ? nil : duration, usedPercent: used, remainingPercent: 100 - used,
+                durationMinutes: duration == 0 ? nil : duration, usedPercent: used, remainingPercent: max(0, 100 - used),
                 resetsAt: reset.flatMap { $0.isFinite && (0...32_503_680_000).contains($0) ? Date(timeIntervalSince1970: $0) : nil },
                 model: nil, fetchedAt: now, source: "claude-statusline"))
         }
         guard !windows.isEmpty else { return false }
-        guard let key = AccountBinding.key(provider: .claude, identity: accountIdentity) else { return false }
-        let snapshot = QuotaSnapshot(provider: .claude, rawPlanType: nil, windows: windows, fetchedAt: now, accountKey: key)
-        let url = location()
+        let snapshot = QuotaSnapshot(provider: .claude, rawPlanType: nil, windows: windows, fetchedAt: now, accountKey: accountKey)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -61,9 +64,7 @@ public enum ClaudeQuotaBridge {
         let snapshot = try JSONDecoder().decode(QuotaSnapshot.self, from: data)
         guard snapshot.provider == .claude, !snapshot.windows.isEmpty, snapshot.windows.count <= 16,
               snapshot.windows.allSatisfy({
-            $0.usedPercent.isFinite && (0...100).contains($0.usedPercent) &&
-            $0.remainingPercent.isFinite && (0...100).contains($0.remainingPercent) &&
-            abs($0.usedPercent + $0.remainingPercent - 100) < 0.01
+            $0.hasValidPercentages
         }),
               snapshot.fetchedAt <= Date().addingTimeInterval(60) else { throw ProviderError.invalidResponse }
         return snapshot

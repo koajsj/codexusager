@@ -30,7 +30,7 @@ public enum JSONLImporter {
         let prefix = try handle.read(upToCount: digestLength) ?? Data()
         let digest = SHA256.hash(data: prefix).map { String(format: "%02x", $0) }.joined()
         let rebuilt = cursor.map {
-            $0.decoderRevision != 2 || $0.fileIdentity != identity || size < $0.fileSize ||
+            $0.decoderRevision != 3 || $0.fileIdentity != identity || size < $0.fileSize ||
             (size == $0.fileSize && modified != $0.modifiedAt) ||
             ($0.prefixDigest != nil && digest != $0.prefixDigest)
         } ?? false
@@ -61,12 +61,12 @@ public enum JSONLImporter {
                 if kind == "turn_context" { model = payload["model"] as? String ?? model; project = payload["cwd"] as? String ?? project }
                 if kind == "token_usage_record" { sawRecord = true }
             }
-            if var record = UsageLineDecoder.decode(object, provider: provider, sessionID: session, sourceFile: url.path) {
+            if var record = UsageLineDecoder.decode(object, provider: provider, sessionID: session, sourceFile: url.path, contextModel: model) {
                 record.model = record.model ?? model
                 record.projectID = record.projectID ?? project
                 if provider == .codex, let old = pendingUsage,
                    old.eventType != record.eventType,
-                   record.sessionID == old.sessionID,
+                   record.sessionID == old.sessionID, record.model == old.model,
                    abs(record.timestamp.timeIntervalSince(old.timestamp)) <= 2,
                    record.inputTokens == old.inputTokens, record.outputTokens == old.outputTokens,
                    record.cachedInputTokens == old.cachedInputTokens,
@@ -120,7 +120,7 @@ public enum JSONLImporter {
                                                offset: completeOffset, preferredRecordEvents: sawRecord,
                                                sessionID: session, project: project, model: model,
                                                discardingOversizedLine: discarding, prefixDigest: digest,
-                                               prefixLength: digestLength, pendingUsage: pendingUsage, decoderRevision: 2),
+                                               prefixLength: digestLength, pendingUsage: pendingUsage, decoderRevision: 3),
                           malformedLines: malformed, peakBufferBytes: peak, rebuilt: rebuilt, reachedEnd: reachedEnd,
                           unsupportedRecords: unsupported)
     }

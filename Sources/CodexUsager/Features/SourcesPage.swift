@@ -106,6 +106,9 @@ struct SourcesPage: View {
                 LabeledContent("最近成功来源", value: source)
             }
             LabeledContent("Session 数据", value: model.sourceSessionStatus(id))
+            if let executable = status.executable {
+                LabeledContent("可执行文件", value: executable.path).font(.caption).textSelection(.enabled)
+            }
             if let version = status.version { LabeledContent("版本", value: version) }
             if let issue = status.issue {
                 VStack(alignment: .leading, spacing: 2) {

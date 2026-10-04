@@ -165,9 +165,8 @@ enum BackupValidation {
                   text(value.id, limit: 1024, required: true), text(value.limitID, limit: 256, required: true),
                   text(value.slot, limit: 256, required: true), validDate(value.timestamp),
                   value.resetsAt.map(validDate) ?? true, value.durationMinutes.map({ $0 >= 0 }) ?? true,
-                  value.remainingPercent.isFinite, value.usedPercent.isFinite,
-                  (0...100).contains(value.remainingPercent), (0...100).contains(value.usedPercent),
-                  abs(value.remainingPercent + value.usedPercent - 100) < 0.01 else { throw BackupError.invalidValues }
+                  QuotaWindow.validPercentages(used: value.usedPercent, remaining: value.remainingPercent,
+                      allowsOverage: value.provider == .claude && value.limitID == "claude" && value.slot == "spend_limit") else { throw BackupError.invalidValues }
         }
         for value in document.modelPrices {
             guard text(value.model, limit: 256, required: true), validDate(value.updatedAt),

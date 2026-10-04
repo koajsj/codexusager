@@ -6,25 +6,52 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select verified Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Check deterministic Xcode project
+        run: |
+          set -euo pipefail
+          python3 Scripts/generate_xcode_project.py
+          git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj
+      - name: Run unit and regression tests
+        env:
+          LIVE_PROVIDER_CHECK: '0'
+          LIVE_SESSION_CHECK: '0'
+        run: swift test
+
+  release:
+    needs: verify
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '26.6'
 
       - name: Validate release version
         env:
@@ -67,6 +94,9 @@ jobs:
           test -d "$app"
           test -d "$widget"
           test -f "$bridge"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")" = '15.0'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$widget/Contents/Info.plist")" = '15.0'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UsageAppGroup' "$app/Contents/Info.plist")" = "$(/usr/libexec/PlistBuddy -c 'Print :UsageAppGroup' "$widget/Contents/Info.plist")"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'dev.codexusager.app'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Contents/Info.plist")" = 'dev.codexusager.app.widget'
           tag_version="${TAG_NAME#v}"
@@ -97,7 +127,7 @@ jobs:
           printf '%s  %s\n' "$digest" "$(basename "$dmg")" > "$dmg.sha256"
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           name: CodexUsager ${{ github.ref_name }}
           prerelease: ${{ endsWith(github.ref_name, '-preview') }}

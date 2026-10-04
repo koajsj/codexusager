@@ -25,3 +25,21 @@ public enum RefreshPolicy: String, Codable, CaseIterable, Sendable, Identifiable
         self == .smart ? 1800 : quotaInterval(remaining: nil)
     }
 }
+
+/// Scheduling decisions use last attempt to bound retries; menu freshness uses success.
+public struct RefreshSchedule: Sendable {
+    public var lastQuotaAttempt: Date?
+    public var lastScanAttempt: Date?
+    public init() {}
+    public func quotaIsDue(policy: RefreshPolicy, remaining: Double?, now: Date) -> Bool {
+        guard let interval = policy.quotaInterval(remaining: remaining) else { return false }
+        return lastQuotaAttempt.map { now.timeIntervalSince($0) >= interval } ?? true
+    }
+    public func scanIsDue(policy: RefreshPolicy, mainWindowActive: Bool, now: Date) -> Bool {
+        guard mainWindowActive, let interval = policy.scanInterval else { return false }
+        return lastScanAttempt.map { now.timeIntervalSince($0) >= interval } ?? true
+    }
+    public static func menuQuotaIsDue(lastSuccess: Date?, now: Date) -> Bool {
+        lastSuccess.map { now.timeIntervalSince($0) > 300 } ?? true
+    }
+}

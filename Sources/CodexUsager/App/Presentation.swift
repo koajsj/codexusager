@@ -16,13 +16,14 @@ extension ConnectionHealth {
     var localizedLabel: String {
         switch self {
         case .notInstalled: String(localized: "未安装")
-        case .signedOut: String(localized: "未登录")
+        case .signedOut: String(localized: "未连接")
         case .connected: String(localized: "已连接")
-        case .syncing: String(localized: "正在同步")
-        case .offline: String(localized: "离线")
-        case .unavailable: String(localized: "不可用")
+        case .syncing: String(localized: "同步中")
+        case .offline: String(localized: "连接异常")
+        case .unavailable: String(localized: "服务暂时不可用")
         case .stale: String(localized: "数据已过期")
         case .parseError: String(localized: "解析异常")
+        case .reconnectRequired: String(localized: "需要重新连接")
         }
     }
 }

@@ -75,7 +75,19 @@ public actor CodexProvider: UsageProvider {
                 }
                 return ProviderRead(status: status, quota: snapshot.windows.isEmpty ? nil : snapshot)
             } catch {
-                markFailure(error, operation: "account/rateLimits/read")
+                if let rpc = error as? ProviderError, case .remote(-32603) = rpc {
+                    // Internal error alone is not evidence of expired authentication.
+                    do {
+                        let data = try await client.request("account/read", parameters: Data(#"{"refreshToken":true}"#.utf8))
+                        let checked = try JSONDecoder().decode(CodexAccountResponse.self, from: data)
+                        if let account = checked.account, account.type == "chatgpt" {
+                            status.account = AccountProfile(provider: .codex, identity: account.email, rawPlanType: account.planType)
+                            markFailure(error, operation: "account/rateLimits/read")
+                        } else { markReconnectRequired() }
+                    } catch is CancellationError {
+                        markFailure(CancellationError(), operation: "account/read")
+                    } catch { markReconnectRequired() }
+                } else { markFailure(error, operation: "account/rateLimits/read") }
                 await client.stop()
                 return ProviderRead(status: status, quota: nil)
             }
@@ -105,11 +117,23 @@ public actor CodexProvider: UsageProvider {
             status.health = .parseError
         } else {
             status.readOutcome = .unavailable
-            status.quotaAvailability = .offline
-            status.health = .offline
+            let remoteFailure: Bool
+            if let rpc = error as? ProviderError, case .remote = rpc { remoteFailure = true } else { remoteFailure = false }
+            status.quotaAvailability = remoteFailure ? .unavailable : .offline
+            status.health = remoteFailure ? .unavailable : .offline
         }
-        status.issue = AppError("Codex 数据读取失败。", debugDetail: "\(operation): \(String(describing: type(of: error)))",
+        status.issue = AppError(status.health == .signedOut ? "需要重新连接 ChatGPT。" :
+            status.health == .unavailable ? "Codex 服务暂时不可用。" : "Codex 数据读取失败。", debugDetail: "\(operation): \(String(describing: type(of: error)))",
             recoverySuggestion: "检查 Codex CLI 版本和登录状态，然后重新刷新。")
+    }
+
+    private func markReconnectRequired() {
+        status.authentication = .unknown; status.account = nil
+        status.health = .reconnectRequired; status.quotaAvailability = .unavailable
+        status.readOutcome = .authenticationRequired
+        status.issue = AppError("连接异常，您的 ChatGPT 登录可能已失效。",
+            debugDetail: "quota_internal_error_account_unconfirmed",
+            recoverySuggestion: "重新连接 ChatGPT 后刷新额度。")
     }
 
     private func handle(_ notification: RPCNotification) {

@@ -4,34 +4,46 @@
 	"classes" = {};
 	"objectVersion" = 60;
 	"objects" = {
-		4D44762607062B76F6F7B6D4 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/AuthenticationViewModel.swift"; "sourceTree" = "<group>"; };
-		997A8F667FE7CC968C48CF20 = { "isa" = "PBXBuildFile"; "fileRef" = 4D44762607062B76F6F7B6D4; };
-		E848FF7B241F4F674FC6D763 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/BrowserLoginFeedback.swift"; "sourceTree" = "<group>"; };
-		E9BCA431BC24275AD97FAA5F = { "isa" = "PBXBuildFile"; "fileRef" = E848FF7B241F4F674FC6D763; };
-		CDC05E9F7042E44E9C969312 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/Features/ChatGPTConnectionControls.swift"; "sourceTree" = "<group>"; };
-		7718931512F462B5B8B0C50F = { "isa" = "PBXBuildFile"; "fileRef" = CDC05E9F7042E44E9C969312; };
-
+		7C48FA872473E4542BC95CB8 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/AnalyticsViewModel.swift";
+			"sourceTree" = "<group>";
+		};
 		9A61E1A595FF1ED20D56A5FB = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/CodexUsager/App/AppModel.swift";
 			"sourceTree" = "<group>";
 		};
-		A10000000000000000000001 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/QuotaViewModel.swift"; "sourceTree" = "<group>"; };
-		A10000000000000000000002 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/AnalyticsViewModel.swift"; "sourceTree" = "<group>"; };
-		A10000000000000000000003 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/RefreshViewModel.swift"; "sourceTree" = "<group>"; };
-		A10000000000000000000004 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/SettingsViewModel.swift"; "sourceTree" = "<group>"; };
-		A10000000000000000000005 = { "isa" = "PBXFileReference"; "lastKnownFileType" = "sourcecode.swift"; "path" = "Sources/CodexUsager/App/ErrorCenter.swift"; "sourceTree" = "<group>"; };
 		BD7EC211DB0478D3C020CA82 = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/CodexUsager/App/AppPreferencesService.swift";
 			"sourceTree" = "<group>";
 		};
+		4D44762607062B76F6F7B6D4 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/AuthenticationViewModel.swift";
+			"sourceTree" = "<group>";
+		};
 		4F99380962CE4A1993693D90 = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/CodexUsager/App/BackupViewModel.swift";
+			"sourceTree" = "<group>";
+		};
+		E848FF7B241F4F674FC6D763 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/BrowserLoginFeedback.swift";
+			"sourceTree" = "<group>";
+		};
+		AE5F46AE1E22C8C1D2CA294C = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/ErrorCenter.swift";
 			"sourceTree" = "<group>";
 		};
 		FB0A20D80176071627E84835 = {
@@ -46,10 +58,34 @@
 			"path" = "Sources/CodexUsager/App/QuotaNotifier.swift";
 			"sourceTree" = "<group>";
 		};
+		7ECB4BF926F11EF9E0B2179B = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/QuotaViewModel.swift";
+			"sourceTree" = "<group>";
+		};
+		902575D1CE513FAF8CB10E65 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/RefreshViewModel.swift";
+			"sourceTree" = "<group>";
+		};
+		4A3E211453A2D688CB8F6220 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/SettingsViewModel.swift";
+			"sourceTree" = "<group>";
+		};
 		B381D1CF8BBA94EE599D9E4E = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"path" = "Sources/CodexUsager/CodexUsagerApp.swift";
+			"sourceTree" = "<group>";
+		};
+		CDC05E9F7042E44E9C969312 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/Features/ChatGPTConnectionControls.swift";
 			"sourceTree" = "<group>";
 		};
 		1A7B9543121698B6376394BD = {
@@ -218,20 +254,20 @@
 		ADCF10F76EBF2A74473E9DC4 = {
 			"isa" = "PBXGroup";
 			"children" = (
-				4D44762607062B76F6F7B6D4,
-				E848FF7B241F4F674FC6D763,
-				CDC05E9F7042E44E9C969312,
+				7C48FA872473E4542BC95CB8,
 				9A61E1A595FF1ED20D56A5FB,
-				A10000000000000000000001,
-				A10000000000000000000002,
-				A10000000000000000000003,
-				A10000000000000000000004,
-				A10000000000000000000005,
 				BD7EC211DB0478D3C020CA82,
+				4D44762607062B76F6F7B6D4,
 				4F99380962CE4A1993693D90,
+				E848FF7B241F4F674FC6D763,
+				AE5F46AE1E22C8C1D2CA294C,
 				FB0A20D80176071627E84835,
 				279882E128324363B7A0C0D7,
+				7ECB4BF926F11EF9E0B2179B,
+				902575D1CE513FAF8CB10E65,
+				4A3E211453A2D688CB8F6220,
 				B381D1CF8BBA94EE599D9E4E,
+				CDC05E9F7042E44E9C969312,
 				1A7B9543121698B6376394BD,
 				88DD7EB336FB7E4D06417F53,
 				43F02BC7DE2450AC5BB32DC3,
@@ -258,22 +294,33 @@
 			);
 			"sourceTree" = "<group>";
 		};
+		9430C82C3ABA7A63EA9790E1 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 7C48FA872473E4542BC95CB8;
+		};
 		3358C0DD112D21B93E4507FB = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = 9A61E1A595FF1ED20D56A5FB;
 		};
-		A20000000000000000000001 = { "isa" = "PBXBuildFile"; "fileRef" = A10000000000000000000001; };
-		A20000000000000000000002 = { "isa" = "PBXBuildFile"; "fileRef" = A10000000000000000000002; };
-		A20000000000000000000003 = { "isa" = "PBXBuildFile"; "fileRef" = A10000000000000000000003; };
-		A20000000000000000000004 = { "isa" = "PBXBuildFile"; "fileRef" = A10000000000000000000004; };
-		A20000000000000000000005 = { "isa" = "PBXBuildFile"; "fileRef" = A10000000000000000000005; };
 		22BAF9ED694D980CACCE4071 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = BD7EC211DB0478D3C020CA82;
 		};
+		997A8F667FE7CC968C48CF20 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 4D44762607062B76F6F7B6D4;
+		};
 		7FEC7F3D612D1390C9FBFB92 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = 4F99380962CE4A1993693D90;
+		};
+		E9BCA431BC24275AD97FAA5F = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = E848FF7B241F4F674FC6D763;
+		};
+		FD65E2E1987D413BEFBBAA86 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = AE5F46AE1E22C8C1D2CA294C;
 		};
 		CDC81C7D6AF6B88EDA85A941 = {
 			"isa" = "PBXBuildFile";
@@ -283,9 +330,25 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = 279882E128324363B7A0C0D7;
 		};
+		B7C15AABC939A6F8B1244792 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 7ECB4BF926F11EF9E0B2179B;
+		};
+		260995A3B3180880CF7D58CB = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 902575D1CE513FAF8CB10E65;
+		};
+		B05B8A641F9FA92EF6DA44F5 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 4A3E211453A2D688CB8F6220;
+		};
 		6074D96D7397C92607175A26 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = B381D1CF8BBA94EE599D9E4E;
+		};
+		7718931512F462B5B8B0C50F = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = CDC05E9F7042E44E9C969312;
 		};
 		365830347F6C7C09E215451A = {
 			"isa" = "PBXBuildFile";
@@ -343,20 +406,20 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
-				997A8F667FE7CC968C48CF20,
-				E9BCA431BC24275AD97FAA5F,
-				7718931512F462B5B8B0C50F,
+				9430C82C3ABA7A63EA9790E1,
 				3358C0DD112D21B93E4507FB,
-				A20000000000000000000001,
-				A20000000000000000000002,
-				A20000000000000000000003,
-				A20000000000000000000004,
-				A20000000000000000000005,
 				22BAF9ED694D980CACCE4071,
+				997A8F667FE7CC968C48CF20,
 				7FEC7F3D612D1390C9FBFB92,
+				E9BCA431BC24275AD97FAA5F,
+				FD65E2E1987D413BEFBBAA86,
 				CDC81C7D6AF6B88EDA85A941,
 				6A7FBDE475391824C1B6CEB9,
+				B7C15AABC939A6F8B1244792,
+				260995A3B3180880CF7D58CB,
+				B05B8A641F9FA92EF6DA44F5,
 				6074D96D7397C92607175A26,
+				7718931512F462B5B8B0C50F,
 				365830347F6C7C09E215451A,
 				F169BB98D702496454DE4F85,
 				B145F416EC1982C63C601043,
@@ -509,10 +572,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app";
 				"PRODUCT_NAME" = "CodexUsager";
@@ -530,10 +593,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app";
 				"PRODUCT_NAME" = "CodexUsager";
@@ -560,10 +623,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app.widget";
 				"PRODUCT_NAME" = "CodexUsagerWidget";
@@ -582,10 +645,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app.widget";
 				"PRODUCT_NAME" = "CodexUsagerWidget";
@@ -613,10 +676,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app.bridge";
 				"PRODUCT_NAME" = "ClaudeQuotaBridge";
@@ -632,10 +695,10 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
+				"MARKETING_VERSION" = "1.0.1";
+				"CURRENT_PROJECT_VERSION" = "3";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
-				"MARKETING_VERSION" = "1.0.0";
-				"CURRENT_PROJECT_VERSION" = "2";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app.bridge";
 				"PRODUCT_NAME" = "ClaudeQuotaBridge";

@@ -43,3 +43,11 @@ Views use `AuthenticationViewModel` → `AuthenticationService` → official Cod
 The official OAuth server handles its callback and original success page. A second short-lived loopback listener supplies the CodexUsager result page after confirmation. It binds only 127.0.0.1 on an ephemeral port, caps connections and headers, sends no-store/CSP headers, and closes after two minutes. It accepts no callback fields, cookies or account metadata. A custom URL scheme returns to the app or retries through the same ViewModel. App errors use safe messages instead of remote callback details.
 
 `RefreshPolicy` separates quota polling (15 minutes, or 5 minutes below 20%) from incremental import (30 minutes). Fixed intervals apply to both; manual mode disables timed and foreground refreshes. Startup, explicit refresh and authentication changes still request current data. Foreground events are coalesced over 30 seconds. Requests and scans retain separate task ownership and last-attempt times. App and Widget share a 20-minute quota freshness bound; errors and elapsed reset times mark data stale immediately. Local scans become stale after 45 minutes. The refresh preference is optional in backups so earlier documents remain readable.
+
+## 1.0.1 刷新与导入修复
+
+AppModel 保留 composition root 与高级刷新协调。RefreshViewModel 拥有 polling task，UsageCore.RefreshSchedule 提供纯值类型调度判定。自动额度刷新使用最后尝试时间限制频率；菜单栏 freshness 使用窗口最后成功时间，超过五分钟只刷新额度。主窗口以明确 NSWindow identifier 判断是否活跃，Settings/popover 不触发周期历史扫描。
+
+fallback ID 使用长度前缀的规范化语义字段和 SHA256。JSONL 在解码时传入 turn_context model，解码器 revision 3 使旧游标安全重索引；原始 source 文件保持只读。匹配旧原始值的 UsageAdjustment 重绑新 ID，不能明确匹配或目标已有修正时保留原修正，不覆盖。SwiftData schema 保持 V3，未修改持久模型关系或删除 migration。
+
+ProcessRunner 每次调用创建一个隔离 actor，拥有子进程、输出流、deadline 与取消清理；stdout 和退出状态分开观察，输出大小和队列有上限，TERM 后仍存活的同一进程最多等待一秒后 KILL。

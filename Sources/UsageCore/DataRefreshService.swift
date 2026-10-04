@@ -77,6 +77,25 @@ public actor DataRefreshService {
     }
     private func scanFiles(_ provider: ProviderID, repository: UsageRepository) async throws -> LocalScanResult {
         let roots = provider == .codex ? await codex.sourceRoots() : await claude.sourceRoots()
+        let (files, directoryFailure) = try sourceFiles(in: roots)
+        var changed = false
+        for file in files {
+            try Task.checkCancellation()
+            do { changed = try await repository.importFile(file, provider: provider) || changed }
+            catch is CancellationError { throw CancellationError() }
+            catch {
+                changed = true
+                try await repository.recordFailure(path: file.path, provider: provider)
+            }
+        }
+        try Task.checkCancellation()
+        let date = Date()
+        await refreshRepository.scanned(provider, at: date,
+            error: directoryFailure ? "部分会话目录无法读取。请检查目录权限后重新扫描。" : nil)
+        return LocalScanResult(changed: changed, completedAt: date)
+    }
+    // Consume Foundation's directory enumerator synchronously before awaiting repository imports.
+    private func sourceFiles(in roots: [URL]) throws -> (files: [URL], directoryFailure: Bool) {
         let fm = FileManager.default
         var paths: Set<URL> = []
         var directoryFailure = false
@@ -96,21 +115,7 @@ public actor DataRefreshService {
                 if file.pathExtension == "jsonl" { paths.insert(file) }
             }
         }
-        var changed = false
-        for file in paths.sorted(by: { $0.path < $1.path }) {
-            try Task.checkCancellation()
-            do { changed = try await repository.importFile(file, provider: provider) || changed }
-            catch is CancellationError { throw CancellationError() }
-            catch {
-                changed = true
-                try await repository.recordFailure(path: file.path, provider: provider)
-            }
-        }
-        try Task.checkCancellation()
-        let date = Date()
-        await refreshRepository.scanned(provider, at: date,
-            error: directoryFailure ? "部分会话目录无法读取。请检查目录权限后重新扫描。" : nil)
-        return LocalScanResult(changed: changed, completedAt: date)
+        return (paths.sorted(by: { $0.path < $1.path }), directoryFailure)
     }
     public func stop() async { await codex.stop(); await claude.stop() }
 }

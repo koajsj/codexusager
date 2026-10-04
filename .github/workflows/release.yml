@@ -1,0 +1,105 @@
+name: macOS Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Validate release version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must be vMAJOR.MINOR.PATCH: $TAG_NAME" >&2
+            exit 1
+          fi
+          app_version=$(xcodebuild -project CodexUsager.xcodeproj -target CodexUsager -configuration Release -showBuildSettings 2>/dev/null | awk '/^[[:space:]]*MARKETING_VERSION = / && !found { version=$3; found=1 } END { print version }')
+          if [[ "$app_version" != "${TAG_NAME#v}" ]]; then
+            echo "Tag $TAG_NAME does not match app MARKETING_VERSION $app_version" >&2
+            exit 1
+          fi
+
+      - name: Build unsigned universal Release app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project CodexUsager.xcodeproj \
+            -scheme CodexUsager \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/CodexUsagerDerivedData" \
+            ARCHS='arm64 x86_64' \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Verify release app
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/CodexUsagerDerivedData/Build/Products/Release/CodexUsager.app"
+          widget="$app/Contents/PlugIns/CodexUsagerWidget.appex"
+          bridge="$app/Contents/MacOS/ClaudeQuotaBridge"
+          test -d "$app"
+          test -d "$widget"
+          test -f "$bridge"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'dev.codexusager.app'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Contents/Info.plist")" = 'dev.codexusager.app.widget'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${TAG_NAME#v}"
+          for binary in "$app/Contents/MacOS/CodexUsager" "$widget/Contents/MacOS/CodexUsagerWidget" "$bridge"; do
+            architectures=$(lipo -archs "$binary")
+            [[ " $architectures " == *' arm64 '* && " $architectures " == *' x86_64 '* ]] || {
+              echo "Missing universal architectures: $binary ($architectures)" >&2
+              exit 1
+            }
+          done
+
+      - name: Create DMG and SHA-256
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/CodexUsagerDerivedData/Build/Products/Release/CodexUsager.app"
+          staging=$(mktemp -d "$RUNNER_TEMP/codexusager-dmg.XXXXXXXX")
+          trap 'rm -rf "$staging"' EXIT
+          ditto "$app" "$staging/CodexUsager.app"
+          ln -s /Applications "$staging/Applications"
+          mkdir -p dist
+          dmg="dist/CodexUsager-$TAG_NAME.dmg"
+          test ! -e "$dmg"
+          hdiutil create -srcfolder "$staging" -volname "CodexUsager $TAG_NAME" -format UDZO "$dmg"
+          digest=$(shasum -a 256 "$dmg" | awk '{print $1}')
+          printf '%s  %s\n' "$digest" "$(basename "$dmg")" > "$dmg.sha256"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: CodexUsager ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/CodexUsager-${{ github.ref_name }}.dmg
+            dist/CodexUsager-${{ github.ref_name }}.dmg.sha256

@@ -95,7 +95,7 @@ private func codexFallback(model: String = "model-a", reasoning: Int = 1, total:
     let start = ContinuousClock.now
     let task = Task { try await ProcessRunner.run(URL(fileURLWithPath: "/bin/sleep"), arguments: ["20"]) }
     try await Task.sleep(for: .milliseconds(100)); task.cancel()
-    do { _ = try await task.value; Issue.record("Must cancel") } catch is CancellationError {} 
+    do { _ = try await task.value; Issue.record("Must cancel") } catch is CancellationError {}
     #expect(start.duration(to: .now) < .seconds(3))
 }
 

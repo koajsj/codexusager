@@ -3,6 +3,8 @@ import SwiftData
 
 extension UsageRepository {
     public func sourceCenterSummaries() throws -> [ProviderID: SourceCenterSummary] {
+        try Task.checkCancellation()
+        if let sourceSummaryCache { return sourceSummaryCache }
         var summaries: [ProviderID: SourceCenterSummary] = [:]
         var sessions: [ProviderID: Set<String>] = [:]
         var unknownUnsupported: Set<ProviderID> = []
@@ -37,9 +39,16 @@ extension UsageRepository {
             if unknownDedup.contains(provider) { summary.deduplicatedRecords = nil }
             summaries[provider] = summary
         }
+        sourceSummaryCache = summaries
         return summaries
     }
     func metadata() throws -> ([ProjectRule], [UsageAdjustment], [ManualUsage], [ModelPrice]) {
+        try Task.checkCancellation()
+        // These values depend on database writes, not the clock. A time-expired summary
+        // can still supply them; every repository metadata mutation clears the cache.
+        if let snapshot = analyticsCache?.snapshot {
+            return (snapshot.rules, snapshot.adjustments, snapshot.manual, snapshot.prices)
+        }
         let decoder = JSONDecoder()
         let rules = try modelContext.fetch(FetchDescriptor<StoredProjectRule>()).map { try decoder.decode(ProjectRule.self, from: $0.payload) }
         let adjustments = try modelContext.fetch(FetchDescriptor<StoredAdjustment>()).map { try decoder.decode(UsageAdjustment.self, from: $0.payload) }
@@ -49,21 +58,48 @@ extension UsageRepository {
     }
     public func analytics(query: UsageQuery, now: Date = .now,
                           timeContext: AnalyticsTimeContext = AnalyticsTimeContext()) throws -> AnalyticsSnapshot {
+        try Task.checkCancellation()
+        let cached = analyticsCache.flatMap { $0.isValid(at: now, calendar: timeContext.calendar) ? $0 : nil }
+        if let cached, cached.query == query { return cached.snapshot }
         let (rules, adjustments, manual, prices) = try metadata()
         var engine = AnalyticsEngine(query: query, now: now, rules: rules, adjustments: adjustments, prices: prices,
                                      timeContext: timeContext)
+        var validUntil = cached?.validUntil ?? AnalyticsCache.nextBoundary(after: now, calendar: timeContext.calendar)
+        var descriptor = FetchDescriptor<StoredUsage>()
+        if cached != nil {
+            // Home, month cost and filter choices have their own global scope. Only narrow
+            // this pass when a still-valid global summary is available from a prior query.
+            let start = query.from ?? query.period.start(now: now, calendar: timeContext.calendar) ?? .distantPast
+            let end = min(now, query.through.flatMap {
+                timeContext.calendar.date(byAdding: .day, value: 1, to: timeContext.calendar.startOfDay(for: $0))
+            } ?? now)
+            let provider = query.provider?.rawValue ?? ""
+            descriptor.predicate = #Predicate { $0.timestamp >= start && $0.timestamp <= end && (provider == "" || $0.provider == provider) }
+        }
         var count = 0
-        try modelContext.enumerate(FetchDescriptor<StoredUsage>(), batchSize: 256) { row in
+        let decoder = JSONDecoder()
+        try modelContext.enumerate(descriptor, batchSize: 256) { row in
             if count % 256 == 0 { try Task.checkCancellation() }
             count += 1
-            let record = try JSONDecoder().decode(UsageRecord.self, from: row.payload)
-            engine.consume(engine.entry(record), originalPath: record.projectID)
+            let record = try decoder.decode(UsageRecord.self, from: row.payload)
+            if cached == nil { AnalyticsCache.include(record.timestamp, now: now, validUntil: &validUntil) }
+            engine.consume(engine.entry(record), originalPath: record.projectID, includeGlobal: cached == nil)
         }
-        for record in manual { engine.consume(engine.entry(record), originalPath: record.project) }
+        for record in manual {
+            try Task.checkCancellation()
+            if cached == nil { AnalyticsCache.include(record.timestamp, now: now, validUntil: &validUntil) }
+            engine.consume(engine.entry(record), originalPath: record.project, includeGlobal: cached == nil)
+        }
         var result = engine.finish()
-        result.health = try modelContext.fetch(FetchDescriptor<StoredHealth>()).map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }.sorted { $0.lastScan > $1.lastScan }
+        if let cached { result.useGlobalSummary(from: cached.snapshot) }
+        if let cached { result.health = cached.snapshot.health }
+        else {
+            result.health = try modelContext.fetch(FetchDescriptor<StoredHealth>()).map { try decoder.decode(SourceHealth.self, from: $0.payload) }.sorted { $0.lastScan > $1.lastScan }
+        }
         result.rules = rules; result.adjustments = adjustments.sorted { $0.updatedAt > $1.updatedAt }
         result.manual = manual.sorted { $0.timestamp > $1.timestamp }; result.prices = prices
+        result.dataRevision = analyticsRevision
+        analyticsCache = AnalyticsCache(query: query, calendar: timeContext.calendar, snapshot: result, validUntil: validUntil)
         return result
     }
     public func observedTokens(provider: ProviderID, from start: Date, through end: Date) throws -> Int64? {
@@ -159,6 +195,6 @@ extension UsageRepository {
         try saveChanges()
     }
     private func saveChanges() throws {
-        do { try modelContext.save() } catch { modelContext.rollback(); throw error }
+        do { try modelContext.save(); invalidateAnalytics() } catch { modelContext.rollback(); throw error }
     }
 }

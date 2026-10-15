@@ -287,6 +287,7 @@ public struct HomeSummary: Sendable {
 }
 
 public struct AnalyticsSnapshot: Sendable {
+    public var dataRevision: UInt64 = 0
     public var tokens = TokenValues()
     public var recordCount = 0
     public var unavailableTotalCount = 0

@@ -32,10 +32,6 @@ struct OverviewPage: View {
                     }
                     Text("缓存与推理可能属于输入或输出的子集，总计遵循各来源语义。")
                         .font(.caption2).foregroundStyle(.secondary)
-                    Divider()
-                    HomeSummaryView(model: model)
-                    Divider()
-                    CostSummaryView(analytics: model.analytics)
                 }
                 DashboardGroup("过去 24 小时") {
                     if model.hasIndexed, model.analytics.today.total != nil || model.analytics.past24Hours.contains(where: { $0.tokens > 0 }) {
@@ -98,6 +94,18 @@ struct OverviewPage: View {
                     }
                 }
             }
+            Divider()
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 24) {
+                    HomeSummaryView(model: model).frame(minWidth: 220, maxWidth: .infinity)
+                    CostSummaryView(analytics: model.analytics).frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    HomeSummaryView(model: model)
+                    CostSummaryView(analytics: model.analytics)
+                }
+            }
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 Text("最近调用").font(.headline)
                 ForEach(model.analytics.homeRecentCalls) { entry in

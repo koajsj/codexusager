@@ -270,6 +270,14 @@ public struct SourceCenterSummary: Sendable {
 }
 
 @ModelActor public actor UsageRepository {
+    public private(set) var analyticsRevision: UInt64 = 0
+    var analyticsCache: AnalyticsCache?
+    var sourceSummaryCache: [ProviderID: SourceCenterSummary]?
+
+    func invalidateAnalytics() {
+        analyticsRevision &+= 1
+        analyticsCache = nil; sourceSummaryCache = nil
+    }
     /// Builds a source index once for legacy normalized rows. No source body is retained.
     public func upgradeSourceIndex() throws {
         let rows = try modelContext.fetchCount(FetchDescriptor<StoredSourceLink>())
@@ -340,6 +348,7 @@ public struct SourceCenterSummary: Sendable {
                 if let healthRow { healthRow.payload = healthData }
                 else { let new = StoredHealth(path: path, payload: healthData); modelContext.insert(new); healthRow = new }
                 try modelContext.save()
+                invalidateAnalytics()
                 changed = changed || result.cursor.offset != cursor?.offset || result.unsupportedRecords > 0 ||
                     previousHealth?.error != health.error
                 cursor = result.cursor
@@ -368,6 +377,7 @@ public struct SourceCenterSummary: Sendable {
         let data = try JSONEncoder().encode(health)
         if let row { row.payload = data } else { modelContext.insert(StoredHealth(path: path, payload: data)) }
         try modelContext.save()
+        invalidateAnalytics()
     }
 
     /// Preserve explicit user corrections when the deterministic fallback changes.

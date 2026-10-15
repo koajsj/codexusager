@@ -54,8 +54,9 @@ struct MainWindow: View {
                 .navigationTitle("CodexUsager")
                 .navigationSplitViewColumnWidth(min: 150, ideal: 172, max: 210)
             } detail: {
+                GeometryReader { detailGeometry in
                 VStack(spacing: 0) {
-                    content(width: max(320, geometry.size.width - (columnVisibility == .detailOnly ? 0 : 172) - (inspectorPresented ? 285 : 0) - 32),
+                    content(width: max(0, detailGeometry.size.width - 32),
                             windowWidth: geometry.size.width)
                     if let error = model.storageError ?? model.operationError {
                         HStack {
@@ -78,6 +79,10 @@ struct MainWindow: View {
                         .padding(8)
                         .background(Color(nsColor: .controlBackgroundColor))
                     }
+                }
+                .onChange(of: detailGeometry.size.width) { _, width in
+                    if inspectorPresented, width < 420 { inspectorPresented = false }
+                }
                 }
                 .navigationTitle(selection?.title ?? String(localized: "概览"))
                 .toolbar {
@@ -156,7 +161,7 @@ struct MainWindow: View {
     @ViewBuilder private func content(width: CGFloat, windowWidth: CGFloat) -> some View {
         switch selection ?? .overview {
         case .overview:
-            OverviewPage(model: model, width: width, compact: windowWidth < 675,
+            OverviewPage(model: model, width: width, compact: width < 510,
                          showSources: { selection = .sources }, showProjects: { selection = .projects })
         case .activity: ActivityCenterPage(model: model, width: width)
         case .usage:

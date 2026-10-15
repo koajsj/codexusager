@@ -59,6 +59,16 @@ ProcessRunner 每次调用创建一个隔离 actor，拥有子进程、输出流
 
 解析修订号 4 使旧文件按现有来源贡献机制重索引；源文件只读，稳定 ID、修正记录和来源关系继续保留。手动 Usage 进入 Token / 成本统计，但不进入调用平均值。所有列表只展示元数据。
 
+## 统计缓存与活动分页
+
+UsageRepository 仅持有一个内存统计快照及一份来源摘要缓存，不新增存储格式。成功导入批次、来源读取失败状态、人工修正、手动记录、项目规则、单价和备份合并会使缓存失效并推进数据版本；账户及额度更新不影响用量版本。取消或失败的统计不会发布半成品缓存。
+
+同一数据版本与查询可复用快照；切换查询时复用独立的 Home 全局摘要，并将日期 / Provider 条件下推数据库。全局摘要保留今日、本自然月成本、最近调用与筛选选项的原有口径。小时 / 日期边界、未来记录变为当前记录、24 小时窗口边界、时间回退和时区变化会使快照重新计算。初次计算或数据变化后的首轮仍需完整遍历；不存在保留所有解码记录的无限缓存。
+
+活动中心使用 `(timestamp descending, stableID lexical ascending)` 游标，不再从头 offset 翻页。游标包含固定截止时间、查询、日历及数据版本；数据改变或筛选改变后必须重新读取第一页。原始与手动记录采用同一排序并合并分页；稀疏项目 / 文本搜索仍可能遍历多个 256 条批次，未声称已完成大规模性能测量。
+
+ViewModel 统一防抖并检查 generation / cancellation，成功后才替换已有列表；列表显示上次筛选或错误时明确提示。视图按查询及数据版本触发加载，不再随每次统计生成时间重复加载；退出页面时取消任务。主窗口直接读取 detail 区域 GeometryReader 的实际宽度，不推算 Sidebar / Inspector 宽度。
+
 `AnalyticsEngine` 复用同一时区快照生成模型、项目和时间分析；Top 列表保持有界。活动中心由 View → AppModel / AnalyticsViewModel → UsageRepository 查询每页 100 条，使用一致词法排序；SwiftData 批次最多 256 条。价格仍使用 StoredModelPrice，备份格式不变。
 
 官方 `turn/started`、`turn/completed`、`thread/tokenUsage/updated` 事件只进入内存中的最多 20 条 CodexActivity，未持久化或加到历史总量。独立 stdio 连接不保证观察别的进程，未调用 thread/resume，不接收任务正文。官方协议参考：https://developers.openai.com/codex/app-server/ 。

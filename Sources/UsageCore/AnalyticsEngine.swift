@@ -95,16 +95,18 @@ struct AnalyticsEngine {
         let text = query.search.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty || [entry.sessionID, entry.projectName, entry.model ?? "", entry.provider.rawValue].contains { $0.localizedCaseInsensitiveContains(text) }
     }
-    mutating func consume(_ entry: UsageEntry, originalPath: String?) {
+    mutating func consume(_ entry: UsageEntry, originalPath: String?, includeGlobal: Bool = true) {
         let p = project(originalPath)
-        result.availableProjects[p.key] = p.name
-        if let model = entry.model { availableModels.insert(model) }
+        if includeGlobal {
+            result.availableProjects[p.key] = p.name
+            if let model = entry.model { availableModels.insert(model) }
+        }
         let total = entry.final.total ?? 0
         let day = calendar.startOfDay(for: entry.timestamp)
         let sessionKey = "\(entry.provider.rawValue):\(entry.sessionID)"
         let priceKey = "\(entry.provider.rawValue):\(entry.model ?? "unknown")"
         let cost = prices[priceKey]?.estimate(entry.final)
-        if !p.ignored, entry.timestamp <= now {
+        if includeGlobal, !p.ignored, entry.timestamp <= now {
             Self.keep(entry, in: &result.homeRecentCalls, limit: 5) { Self.newer($0, $1) }
             if day == calendar.startOfDay(for: now) { result.todayCost.consume(cost) }
             if let start = calendar.dateInterval(of: .month, for: now)?.start, entry.timestamp >= start {

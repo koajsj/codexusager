@@ -7,6 +7,15 @@ struct ActivityCenterPage: View {
     @State private var selectedID: String?
     @State private var detail: UsageEntry?
     private var state: AnalyticsViewModel { model.analyticsViewModel }
+    private struct LoadKey: Equatable {
+        var query: UsageQuery
+        var revision: UInt64
+        var day: Date
+    }
+    private var loadKey: LoadKey {
+        LoadKey(query: model.query, revision: model.analytics.dataRevision,
+                day: AnalyticsTimeContext().calendar.startOfDay(for: model.analytics.generatedAt))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             AnalyticsFilters(model: model)
@@ -34,6 +43,10 @@ struct ActivityCenterPage: View {
             }
             Text("调用按来源用量事件计数，不等同于 HTTP 请求。耗时、状态和模型缺失时显示 —，不读取任务正文。")
                 .font(.caption).foregroundStyle(.secondary)
+            if let displayedQuery = state.activityQuery, displayedQuery != model.query {
+                Text("暂时显示上次筛选结果，正在更新或等待重试。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if let error = state.activityError, state.activityEntries.isEmpty {
                 ContentUnavailableView("读取失败", systemImage: "exclamationmark.triangle", description: Text(error))
             } else if state.activityEntries.isEmpty, !state.activityLoading {
@@ -70,16 +83,20 @@ struct ActivityCenterPage: View {
             }
             HStack {
                 Text("已显示 \(state.activityEntries.count) 条").font(.caption).foregroundStyle(.secondary)
-                if state.activityLoading { ProgressView().controlSize(.small) }
+                if state.activityLoading { ProgressView().controlSize(.small).accessibilityLabel("正在更新调用记录") }
+                if let asOf = state.activityAsOf {
+                    Text("截至 \(asOf, format: .dateTime.hour().minute())").font(.caption).foregroundStyle(.secondary)
+                        .help("本次浏览的数据截止时间；刷新后重新读取最新数据。")
+                }
                 Spacer()
                 Button("详情") { detail = state.activityEntries.first { $0.id == selectedID } }.disabled(selectedID == nil)
-                if state.activityHasMore { Button("加载更多") { model.loadActivity(reset: false) }.disabled(state.activityLoading) }
+                if state.activityHasMore { Button("加载更多") { model.loadActivity(reset: false) }.disabled(state.activityLoading || state.activityQuery != model.query) }
             }
         }
         .padding(14)
-        .task { model.loadActivity() }
-        .onChange(of: model.query) { _, _ in model.loadActivity() }
-        .onChange(of: model.analytics.generatedAt) { _, _ in model.loadActivity() }
+        .task(id: loadKey) { model.loadActivity() }
+        .onChange(of: state.activityAsOf) { _, _ in selectedID = nil }
+        .onDisappear { state.shutdown() }
         .sheet(item: $detail) { UsageEventDetail(entry: $0) }
     }
 }

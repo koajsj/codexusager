@@ -11,7 +11,7 @@ CodexUsager 是macOS Tahoe 原生 AI Coding Analytics Dashboard。Codex App Serv
 
 安装 Xcode 26 或兼容的 Swift 6.2+ 工具链。主工程是 `CodexUsager.xcodeproj`，包含 App、WidgetKit 扩展和 Claude 额度桥接。打开工程后，在 App 与 Widget 目标配置同一 Apple 开发团队，并在开发者账户中注册、启用两者共享的 `group.$(DEVELOPMENT_TEAM).dev.codexusager.shared` App Group。运行前需由 Xcode 完成签名。
 
-预览安装包与 SHA-256 位于 [GitHub Releases](https://github.com/koajsj/codexusager/releases)。当前自动发布流程生成未签名、未公证的 Universal App 和 DMG；安装启动、Gatekeeper 和 Widget 共享容器行为仍需后续运行验证。具备开发者账户后可按 [RELEASE.md](docs/RELEASE.md) 配置正式签名与公证。
+预览安装包与 SHA-256 位于 [GitHub Releases](https://github.com/koajsj/codexusager/releases)。当前自动发布流程仅接受 `-preview` Tag，生成未签名、未公证的 Universal App 和 DMG；正式 Tag 会被拦截，须先配置签名与公证流程。安装启动、Gatekeeper 和 Widget 共享容器行为仍需后续运行验证。具备开发者账户后可按 [RELEASE.md](docs/RELEASE.md) 配置正式签名与公证。
 
 **发布入口是 `CodexUsager.xcodeproj` 的 `CodexUsager` Application Target 和同名共享 Scheme。** `Scripts/package_app.sh` 使用该入口，生成包含 Widget 和 Claude Bridge 的完整 App：
 
@@ -43,7 +43,7 @@ Scripts/package_app.sh release --universal --unsigned
 
 ## Analytics 与数据边界
 
-- 活动中心：分页读取真实用量事件，展示 Provider、模型、Session、项目及各 Token 字段；大窗口显示更多列，小窗口通过详情查看。每页 100 条，单次浏览最多 10,000 条，可缩小筛选范围。调用次数是去重后的用量事件数，不等同于网络请求数；手动记录不计入调用次数。
+- 活动中心：使用时间戳与稳定 ID 游标分页，展示 Provider、模型、Session、项目及各 Token 字段；大窗口显示更多列，小窗口通过详情查看。每页 100 条，单次浏览最多 10,000 条；固定浏览截止时间，数据变化后刷新，避免重复行。筛选防抖期间保留旧结果并明确提示。调用次数是去重后的用量事件数，不等同于网络请求数；手动记录不计入调用次数。
 - 模型分析：Token 占比、平均单条消耗、会话和项目统计。缺少 Total 时不将已知小计当成完整总量；超大数饱和时不显示精确占比。
 - 成本：沿用模型页可编辑的本地 USD 单价，展示今日、本自然月、项目排行。全部标为模拟估算，非真实账单；价格或必要 Token 字段缺失时明确显示覆盖条数。
 - 时间与项目：日、周、月趋势、本地时区小时分布、常用模型、高消耗事件及 Session。用量趋势不是效率或质量评分，小时分布不是工作时长。

@@ -21,7 +21,7 @@ Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.1-preview.dmg
 
 未签名、未公证的镜像不代表已通过 Gatekeeper 或安装启动验证。没有开发团队时 `USAGE_APP_GROUP` 中的 Team ID 无法有效展开，Widget 共享容器读写不能据此视为可用；App 会提示共享容器错误。不得移除 App Group 或 Widget 来掩盖该限制。
 
-`.github/workflows/release.yml` 在新的 `vMAJOR.MINOR.PATCH` tag 上执行等价的 Xcode Universal 未签名构建、产物结构检查、DMG 和 SHA-256 上传。tag 必须匹配 `MARKETING_VERSION`。已存在的 tag/Release 不覆盖；后续发布应先更新工程版本并创建新 tag。
+`.github/workflows/release.yml` 在新的 `vMAJOR.MINOR.PATCH-preview` tag 上执行等价的 Xcode Universal 未签名构建、产物结构检查、DMG 和 SHA-256 上传。tag 必须匹配 `MARKETING_VERSION`。无 `-preview` 后缀的正式 tag 会被拦截，直到配置独立签名与公证流程。已存在的 tag/Release 不移动；后续发布应先更新工程版本并创建新 tag。
 
 ## 构建与签名
 
@@ -46,7 +46,7 @@ Apple 的 [公证说明](https://developer.apple.com/documentation/security/nota
 
 产物命名为 `CodexUsager-v1.0.1-preview.dmg` 与同名 `.sha256`；Bundle 的 Marketing Version 保持数字 `1.0.1`，构建号为 `3`。使用已推送的最新 main 和新的 DerivedData 生成；新 tag `v1.0.1-preview` 通过 Actions 发布独立的未签名预览版，已有 tag/Release 不移动、不覆盖。
 
-Actions 兼容数字版本 tag 与 `-preview` 后缀，并将后者标记为 prerelease。只有推送 tag 才触发发布。已有 v1.0.0 tag/Release 保留，不移动或覆盖。
+Actions 监听版本 tag，仅允许当前未签名流程发布 `-preview` 并标记为 prerelease。正式 tag 不能借此发布未签名正式版。只有推送 tag 才触发发布；main / PR 的检查流程不打包或发布。已有 v1.0.0 tag/Release 保留，不移动或覆盖。
 
 登录、取消、登出、Keychain 权限、原文件登录重新连接、官方回调与附加浏览器反馈页需要真实来源验证。macOS 26 Tahoe 的布局、前后台刷新策略、菜单栏与 Widget 需分别运行验证。构建或合成 RPC 测试不代表这些流程已完成验收。
 
@@ -55,3 +55,11 @@ Actions 兼容数字版本 tag 与 `-preview` 后缀，并将后者标记为 pre
 Actions 的 `verify` job 先执行 `swift test`（不启用真实 Provider / 本地会话检查）及工程生成器一致性检查。`release` 必须依赖 `verify` 成功，才允许 Universal Xcode Application 构建、完整 Bundle 检查、DMG / SHA256 和 Release 上传。验证 job 仅有 contents: read，只有发布 job 有 contents: write。所有第三方 Actions 固定到 commit SHA，Xcode 固定到此前成功构建的 26.6。
 
 本地生成器验证：运行两次 `python3 Scripts/generate_xcode_project.py` 比较文件摘要；已提交状态下再次生成，`git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj` 必须为空。
+
+## 配置检查与持续集成
+
+`Scripts/validate_release.py` 提供 `unsigned-preview` / `signed` 两种检查模式。`package_app.sh` 在构建前检查所有 Target 展开的设置，构建后检查 App / Widget Bundle；`prepare_dmg.sh` 复用 Bundle 校验。未签名 Preview 明确提示共享容器未验证。签名模式要求相同的有效 Team ID、App Group 和版本；构建后还核对 App / Widget 实际签名的团队及 App Group Entitlement。该检查不代替 Apple 公证、Provisioning Profile 与实际共享容器验收。
+
+`-showBuildSettings` 使用 `-alltargets`，避免 Scheme 只返回主 App 而漏查 Widget。配置数据只存于临时目录，失败时随脚本清理。`Scripts/tests` 使用合成设置与临时 Bundle 覆盖错误发布模式、版本、团队、App Group 及缺失嵌入产物。
+
+`.github/workflows/ci.yml` 在 main push / PR 上执行工程生成一致性、发布校验脚本测试、Swift 单元测试及 Universal Release 编译。它只有 contents: read，不创建 DMG、Tag 或 Release。Tag 发布流程保留独立验证门槛，并调用同一 `prepare_dmg.sh`，避免维护两套打包逻辑。

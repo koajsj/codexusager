@@ -13,6 +13,9 @@ import UsageCore
     var activityHasMore = false
     var activityLoading = false
     var activityError: String?
+    var activityQuery: UsageQuery?
+    var activityAsOf: Date?
+    private var activityCursor: ActivityCursor?
     var liveActivities: [CodexActivity] = []
     private var activityTask: Task<Void, Never>?
     private var activityGeneration = UUID()
@@ -28,26 +31,38 @@ import UsageCore
         liveActivities.insert(updated, at: 0)
         liveActivities = Array(liveActivities.prefix(20))
     }
-    func loadActivity(reset: Bool, fetch: @escaping @Sendable (Int) async throws -> ActivityPage) {
-        if !reset, activityLoading { return }
+    func loadActivity(reset: Bool, query: UsageQuery,
+                      fetch: @escaping @Sendable (ActivityCursor?) async throws -> ActivityPage) {
+        if !reset, activityLoading || activityQuery != query { return }
         activityTask?.cancel(); let generation = UUID(); activityGeneration = generation
-        if reset { activityEntries = []; activityError = nil }
-        let offset = activityEntries.count
-        guard offset < 10_000 else { activityHasMore = false; return }
+        if reset { activityError = nil }
+        guard reset || activityEntries.count < 10_000 else { activityHasMore = false; return }
+        let cursor = reset ? nil : activityCursor
         activityLoading = true
         activityTask = Task { [weak self] in
             guard let self else { return }
             defer { if activityGeneration == generation { activityLoading = false; activityTask = nil } }
             do {
-                let page = try await fetch(offset)
+                if reset { try await Task.sleep(for: .milliseconds(180)) }
+                let page = try await fetch(cursor)
                 guard !Task.isCancelled, activityGeneration == generation else { return }
-                activityEntries += page.entries; activityHasMore = page.hasMore && activityEntries.count < 10_000
+                if reset { activityEntries = page.entries } else { activityEntries += page.entries }
+                activityCursor = page.nextCursor
+                activityHasMore = page.hasMore && activityEntries.count < 10_000
+                activityQuery = query; activityAsOf = page.asOf
                 activityError = nil
             } catch is CancellationError { }
             catch {
-                if activityGeneration == generation { activityError = "调用记录读取失败，请刷新重试。" }
+                guard activityGeneration == generation else { return }
+                if case ActivityReadError.dataChanged = error {
+                    activityError = "本地数据已更新，请刷新列表后继续浏览。"
+                    activityHasMore = false
+                } else { activityError = "调用记录读取失败，请刷新重试；已有结果予以保留。" }
             }
         }
     }
-    func shutdown() { activityTask?.cancel(); activityTask = nil }
+    func shutdown() {
+        activityGeneration = UUID()
+        activityTask?.cancel(); activityTask = nil; activityLoading = false
+    }
 }

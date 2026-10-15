@@ -43,12 +43,24 @@ if [[ $UNIVERSAL -eq 1 ]]; then ARGS+=("ARCHS=arm64 x86_64" ONLY_ACTIVE_ARCH=NO)
 if [[ -n "$TEAM" ]]; then ARGS+=("DEVELOPMENT_TEAM=$TEAM"); fi
 # Explicit unsigned artifacts retain the project's entitlements and capabilities.
 if [[ $UNSIGNED -eq 1 ]]; then ARGS+=(CODE_SIGNING_ALLOWED=NO); fi
+MODE=signed
+if [[ $UNSIGNED -eq 1 ]]; then MODE=unsigned-preview; fi
+SETTINGS_ARGS=(-project "$ROOT/CodexUsager.xcodeproj" -alltargets -configuration "$CONFIG" -showBuildSettings -json)
+if [[ -n "$TEAM" ]]; then SETTINGS_ARGS+=("DEVELOPMENT_TEAM=$TEAM"); fi
+if [[ $UNSIGNED -eq 1 ]]; then SETTINGS_ARGS+=(CODE_SIGNING_ALLOWED=NO); fi
+# A scheme's -showBuildSettings only includes its explicit build entries, not embedded dependencies.
+xcodebuild "${SETTINGS_ARGS[@]}" > "$WORK/settings.json"
+python3 "$ROOT/Scripts/validate_release.py" --settings "$WORK/settings.json" --mode "$MODE"
+if [[ $UNSIGNED -eq 0 && -z "$TEAM" ]]; then
+  TEAM=$(python3 -c 'import json,sys; print(next(x["buildSettings"]["DEVELOPMENT_TEAM"] for x in json.load(open(sys.argv[1])) if x["target"] == "CodexUsager"))' "$WORK/settings.json")
+fi
 xcodebuild "${ARGS[@]}" build
 
 PRODUCT="$WORK/DerivedData/Build/Products/$CONFIG/CodexUsager.app"
 WIDGET="$PRODUCT/Contents/PlugIns/CodexUsagerWidget.appex"
 PLIST="$PRODUCT/Contents/Info.plist"
 WIDGET_PLIST="$WIDGET/Contents/Info.plist"
+python3 "$ROOT/Scripts/validate_release.py" --app "$PRODUCT" --mode "$MODE" --team "$TEAM"
 test -d "$PRODUCT"
 test -d "$WIDGET"
 test -s "$PRODUCT/Contents/Resources/AppIcon.icns"

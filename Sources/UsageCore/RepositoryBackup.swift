@@ -72,6 +72,7 @@ extension UsageRepository {
             try Task.checkCancellation()
             // One synchronous save commits the entire merge. No raw usage, cursor or live quota is changed.
             try modelContext.save()
+            invalidateAnalytics()
         } catch { modelContext.rollback(); throw error }
         return BackupRestoreResult(added: plan.summary.added, skipped: plan.summary.skipped,
             pendingAdjustments: plan.summary.pendingAdjustments, settings: document.settings)

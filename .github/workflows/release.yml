@@ -35,6 +35,8 @@ jobs:
           LIVE_PROVIDER_CHECK: '0'
           LIVE_SESSION_CHECK: '0'
         run: swift test
+      - name: Check release validation
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Scripts/tests -v
 
   release:
     needs: verify
@@ -68,6 +70,10 @@ jobs:
             echo "Tag $TAG_NAME does not match app MARKETING_VERSION $app_version" >&2
             exit 1
           fi
+          if [[ "$TAG_NAME" != *-preview ]]; then
+            echo "This workflow builds unsigned previews only. A formal tag requires a separately configured signing and notarization pipeline." >&2
+            exit 1
+          fi
 
       - name: Build unsigned universal Release app
         run: |
@@ -91,6 +97,7 @@ jobs:
           app="$RUNNER_TEMP/CodexUsagerDerivedData/Build/Products/Release/CodexUsager.app"
           widget="$app/Contents/PlugIns/CodexUsagerWidget.appex"
           bridge="$app/Contents/MacOS/ClaudeQuotaBridge"
+          python3 Scripts/validate_release.py --app "$app" --mode unsigned-preview --tag "$TAG_NAME"
           test -d "$app"
           test -d "$widget"
           test -f "$bridge"
@@ -115,16 +122,9 @@ jobs:
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/CodexUsagerDerivedData/Build/Products/Release/CodexUsager.app"
-          staging=$(mktemp -d "$RUNNER_TEMP/codexusager-dmg.XXXXXXXX")
-          trap 'rm -rf "$staging"' EXIT
-          ditto "$app" "$staging/CodexUsager.app"
-          ln -s /Applications "$staging/Applications"
           mkdir -p dist
           dmg="dist/CodexUsager-$TAG_NAME.dmg"
-          test ! -e "$dmg"
-          hdiutil create -srcfolder "$staging" -volname "CodexUsager $TAG_NAME" -format UDZO "$dmg"
-          digest=$(shasum -a 256 "$dmg" | awk '{print $1}')
-          printf '%s  %s\n' "$digest" "$(basename "$dmg")" > "$dmg.sha256"
+          Scripts/prepare_dmg.sh "$app" "$dmg" --unsigned
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
@@ -132,6 +132,8 @@ jobs:
           name: CodexUsager ${{ github.ref_name }}
           prerelease: ${{ endsWith(github.ref_name, '-preview') }}
           generate_release_notes: true
+          body: |
+            未签名 Preview，非正式签名发行版。Widget / App Group、Gatekeeper 与安装启动仍需独立验证。
           fail_on_unmatched_files: true
           files: |
             dist/CodexUsager-${{ github.ref_name }}.dmg

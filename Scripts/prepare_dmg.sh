@@ -9,6 +9,7 @@ fi
 APP="$1"
 OUTPUT="$2"
 IDENTITY="$3"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ "$APP" != /* ]]; then APP="$PWD/$APP"; fi
 if [[ "$OUTPUT" != /* ]]; then OUTPUT="$PWD/$OUTPUT"; fi
 
@@ -48,6 +49,10 @@ if [[ "$IDENTITY" != --unsigned ]]; then
     echo "App 必须使用 Developer ID Application 和 Hardened Runtime 签名。" >&2
     exit 2
   fi
+  TEAM=$(printf '%s\n' "$signature" | sed -n 's/^TeamIdentifier=//p')
+  python3 "$ROOT/Scripts/validate_release.py" --app "$APP" --mode signed --team "$TEAM"
+else
+  python3 "$ROOT/Scripts/validate_release.py" --app "$APP" --mode unsigned-preview
 fi
 
 OUTPUT_DIR=$(dirname "$OUTPUT")

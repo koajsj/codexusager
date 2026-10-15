@@ -40,7 +40,7 @@ private actor WidgetSnapshotPublisher {
     var codexQuota: QuotaState { get { quotaViewModel.codexQuota } set { quotaViewModel.codexQuota = newValue } }
     var claudeQuota: QuotaState { get { quotaViewModel.claudeQuota } set { quotaViewModel.claudeQuota = newValue } }
     var analytics: AnalyticsSnapshot { get { analyticsViewModel.snapshot } set { analyticsViewModel.snapshot = newValue } }
-    var query: UsageQuery { get { analyticsViewModel.query } set { analyticsViewModel.query = newValue; reloadAnalytics() } }
+    var query: UsageQuery { get { analyticsViewModel.query } set { guard analyticsViewModel.query != newValue else { return }; analyticsViewModel.query = newValue; reloadAnalytics() } }
     var sessionEntries: [UsageEntry] { get { analyticsViewModel.sessionEntries } set { analyticsViewModel.sessionEntries = newValue } }
     var isLoadingSession: Bool { get { analyticsViewModel.isLoadingSession } set { analyticsViewModel.isLoadingSession = newValue } }
     var isAggregating: Bool { get { analyticsViewModel.isAggregating } set { analyticsViewModel.isAggregating = newValue } }
@@ -515,8 +515,8 @@ private actor WidgetSnapshotPublisher {
     }
     func loadActivity(reset: Bool = true) {
         guard let repository else { return }
-        analyticsViewModel.loadActivity(reset: reset) { [query] offset in
-            try await repository.activity(query: query, offset: offset)
+        analyticsViewModel.loadActivity(reset: reset, query: query) { [query] cursor in
+            try await repository.activity(query: query, after: cursor)
         }
     }
     func saveAdjustment(_ value: UsageAdjustment) { mutate { try await $0.saveAdjustment(value) } }

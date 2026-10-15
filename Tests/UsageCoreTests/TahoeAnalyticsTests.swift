@@ -84,8 +84,8 @@ import XCTest
     try await repository.importFile(source, provider: .claude)
     var query = UsageQuery(); query.period = .all; query.project = "/fixture/p"
     let first = try await repository.activity(query: query, limit: 100)
-    let second = try await repository.activity(query: query, limit: 100, offset: 100)
-    let third = try await repository.activity(query: query, limit: 100, offset: 200)
+    let second = try await repository.activity(query: query, limit: 100, after: first.nextCursor)
+    let third = try await repository.activity(query: query, limit: 100, after: second.nextCursor)
     #expect(first.entries.count == 100 && first.hasMore)
     #expect(second.entries.count == 100 && second.hasMore)
     #expect(third.entries.count == 30 && !third.hasMore)

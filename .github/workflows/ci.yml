@@ -1,0 +1,48 @@
+name: macOS Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
+      - name: Check generated project and release validation
+        run: |
+          set -euo pipefail
+          python3 Scripts/generate_xcode_project.py
+          git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Scripts/tests -v
+          bash -n Scripts/package_app.sh Scripts/prepare_dmg.sh
+      - name: Unit and regression tests
+        env:
+          LIVE_PROVIDER_CHECK: '0'
+          LIVE_SESSION_CHECK: '0'
+        run: swift test
+      - name: Compile universal App and embedded targets
+        run: |
+          set -euo pipefail
+          xcodebuild -project CodexUsager.xcodeproj -scheme CodexUsager \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/CodexUsagerChecks" \
+            ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build
+          python3 Scripts/validate_release.py --mode unsigned-preview \
+            --app "$RUNNER_TEMP/CodexUsagerChecks/Build/Products/Release/CodexUsager.app"

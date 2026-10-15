@@ -22,9 +22,9 @@ Claude detection calls the documented local `claude auth status` command. The op
 
 ## UI and state
 
-`AppModel` owns the SwiftData repository and a `DataRefreshService`, which owns provider actors and coordinates source-file scans through the repository. A separate local metadata repository retains successful provider sync and completed scan times; live quota update time remains on the quota snapshot. Reads, events, stale states and local import update observed state without replacing the entire view with a loader. The main window uses a `NavigationSplitView`; the inspector is optional at width >= 950 pt and the sidebar automatically collapses below 675 pt. AppKit records window frame and enforces a 540 × 390 content minimum, with a 720 × 500 default. Sessions use a width-adaptive native Table. The status item uses an original monochrome mark and four display modes. Settings live in the system `Settings` scene.
+`AppDelegate` owns the only observable `AppModel`, starts it at application launch and awaits shutdown before replying to termination. Closing the last window keeps the app running; the Dock and menu popover can reopen its window. SwiftUI registers public window/settings actions, with early requests queued. `AppModel` owns the SwiftData repository and a `DataRefreshService`, which owns provider actors and coordinates source-file scans through the repository. A separate local metadata repository retains successful provider sync and completed scan times; live quota update time remains on the quota snapshot. Reads, events, stale states and local import update observed state without replacing the entire view with a loader. The main window uses a `NavigationSplitView`; the inspector is optional at width >= 950 pt and the sidebar automatically collapses below 675 pt. AppKit records window frame and enforces a 540 × 390 content minimum, with a 720 × 500 default. Sessions use a width-adaptive native Table. The status item uses an original monochrome mark and four display modes. Settings live in the system `Settings` scene.
 
-The single-page Welcome flow persists completion through `AppPreferencesService` and its preference repository. Existing preference keys are retained. The Home summary is accumulated in the same analytics pass as today's totals, before page filters: top project/model use today's known total tokens; latest activity excludes ignored projects and future entries. Quota labels are based only on current, fresh provider windows.
+The single-page Welcome flow persists completion through `AppPreferencesService`. Existing preference keys are retained. The Home summary is accumulated in the same analytics pass as today's totals, before page filters: top project/model use today's known total tokens; latest activity excludes ignored projects and future entries. Quota labels are based only on current, fresh provider windows.
 
 Quota pace is a linear extrapolation from observations in one reset cycle. Local Token totals for the observed interval are shown independently because no stable Token-to-quota conversion is assumed. Notifications are opt-in, requested through UserNotifications on toggle, deduplicated by account/window/reset cycle and delivered only when the main app receives valid fresh quota data.
 
@@ -72,3 +72,23 @@ ViewModel 统一防抖并检查 generation / cancellation，成功后才替换�
 `AnalyticsEngine` 复用同一时区快照生成模型、项目和时间分析；Top 列表保持有界。活动中心由 View → AppModel / AnalyticsViewModel → UsageRepository 查询每页 100 条，使用一致词法排序；SwiftData 批次最多 256 条。价格仍使用 StoredModelPrice，备份格式不变。
 
 官方 `turn/started`、`turn/completed`、`thread/tokenUsage/updated` 事件只进入内存中的最多 20 条 CodexActivity，未持久化或加到历史总量。独立 stdio 连接不保证观察别的进程，未调用 thread/resume，不接收任务正文。官方协议参考：https://developers.openai.com/codex/app-server/ 。
+
+## 菜单栏与导航收敛
+
+菜单栏仍使用唯一 NSStatusItem / NSPopover，标签改为小型 AppKit View，字体测量与绘制共用规则，按实际高度排两行，最大宽度 140pt，长名称缩略、数字等宽。MenuBarPresentation 仅产生展示值；真实窗口可按 provider + windowID 选择，默认沿用既有来源。所选窗口暂不可用时明确提示，全部缺失时回退默认来源，不删除偏好。可选设置字段兼容旧备份；SwiftData Schema 未变。
+
+弹出页展示两家 Provider、真实错误与更新时间，使用有界纵向滚动。打开时按现有间隔请求到期增量索引，不启动额外轮询；额度刷新加 30 秒尝试间隔以抑制反复开菜单的失败重试。主窗口仅有额度监控、用量分析、数据来源；模型 / 项目 / 会话 / 活动复用旧页面，额度历史与速度可展开。
+
+主 App 退出时取消后台读取并等待，已确认的人工数据保存和导出等待完成；认证与备份清理接入异步退出链路。Widget 仍只编译 WidgetShared.swift 与视图，只读 App Group 快照。
+
+先前 1.0.1 的“菜单栏只刷新额度”是历史行为，上述菜单打开时到期扫描取代该规则。新交互尚未构建或启动，菜单栏裁切、窗口恢复、退出清理及 Widget 需后续运行验证。
+
+### 已确认的稳定性收尾
+
+普通导出从打开保存面板起持有忙碌状态，取消或结束后释放，避免面板重入覆盖任务引用。退出在第一个异步等待前禁止备份新操作并关闭未确认面板；预览读取可取消，已确认的普通导出、备份导出与恢复等待结束。恢复提交后仍应用用户选择的设置，刷新回调在退出阶段不创建新任务。
+
+活动列表保留上次成功结果，但筛选、数据版本、重新读取和离开页面都会使旧游标失效；失败后只能刷新第一页，不把新结果追加到旧批次。失效与任务取消使用同一 generation 保护，正在重读时明确显示保留结果的提示。
+
+文件属性、前缀检查与 JSONL 读取在存储入口转换成来源 I/O 错误；DataRefreshService 继续索引其他来源文件并记录失败。游标解码或数据库失败向上报告 LocalScanError.storageUnavailable，不伪装成文件读取失败；健康记录保存失败回滚。两类错误均不推进成功扫描时间。
+
+菜单栏文字宽度缓存只依赖显示行和实际高度，变化后重新测量；高亮与系统外观变化仍更新原生颜色。数据来源页的可执行文件路径遵守 hidePaths，临时展开状态在离页或隐私偏好变化时清除，不进入设置或备份。本节实现仅完成静态核对，运行行为需后续验证。

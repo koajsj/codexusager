@@ -1,11 +1,12 @@
 import SwiftUI
 
 @main struct CodexUsagerApp: App {
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    private var model: AppModel { delegate.model }
     var body: some Scene {
         Window("CodexUsager", id: "main") {
             MainWindow(model: model)
+                .modifier(SceneActions(model: model))
                 .preferredColorScheme(model.preferredColorScheme)
                 .onOpenURL { url in
                     guard url.scheme == "codexusager", url.user == nil, url.password == nil,
@@ -13,7 +14,6 @@ import SwiftUI
                     if url.host == "login" { model.loginChatGPT() }
                     else if url.host == "open" { model.openMainWindow() }
                 }
-                .onChange(of: scenePhase) { _, phase in if phase == .active { model.becameActive() } }
         }
         .defaultSize(width: 720, height: 500)
         .commands { SidebarCommands() }
@@ -21,7 +21,7 @@ import SwiftUI
         Settings {
             SettingsView(model: model)
                 .preferredColorScheme(model.preferredColorScheme)
-                .onAppear { model.start() }
+                .modifier(SceneActions(model: model))
         }
     }
 }
@@ -32,6 +32,18 @@ extension AppModel {
         case "light": .light
         case "dark": .dark
         default: nil
+        }
+    }
+}
+
+/// SwiftUI owns the public scene actions; the application model queues early requests.
+private struct SceneActions: ViewModifier {
+    let model: AppModel
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
+    func body(content: Content) -> some View {
+        content.onAppear {
+            model.registerSceneActions(main: { openWindow(id: "main") }, settings: { openSettings() })
         }
     }
 }

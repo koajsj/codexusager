@@ -37,6 +37,29 @@ struct SettingsView: View {
                         Text("已使用").tag(MenuValue.used)
                     }
                 }
+                Section("常驻额度窗口 · 最多两个") {
+                    ForEach(ProviderID.allCases, id: \.self) { provider in
+                        ForEach(model.quota(provider).snapshot?.windows ?? []) { window in
+                            let selection = MenuQuotaSelection(provider: provider, windowID: window.id)
+                            Toggle("\(provider.title) · \(window.localizedName)", isOn: Binding(
+                                get: { model.menuQuotaSelections.contains(selection) },
+                                set: { model.setMenuSelection(selection, enabled: $0) }))
+                                .disabled(model.menuQuotaSelections.count >= 2 && !model.menuQuotaSelections.contains(selection))
+                        }
+                    }
+                    ForEach(model.menuQuotaSelections.filter { selection in
+                        !((model.quota(selection.provider).snapshot?.windows ?? []).contains { $0.id == selection.windowID })
+                    }, id: \.self) { selection in
+                        HStack {
+                            Text("\(selection.provider.title) · 所选窗口暂不可用").font(.caption)
+                            Spacer()
+                            Button("移除") { model.setMenuSelection(selection, enabled: false) }
+                        }
+                    }
+                    if !model.menuQuotaSelections.isEmpty { Button("恢复默认来源") { model.menuQuotaSelections = [] } }
+                    Text("不选择时沿用上方来源与双额度设置。顶部空间不足可选极简或仅图标；全屏及自动隐藏由 macOS 控制。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Section("首次使用") {
                     LabeledContent("欢迎引导", value: model.welcomeCompleted ? "已完成" : "尚未完成")
                     Button("查看欢迎说明") { showWelcome = true }

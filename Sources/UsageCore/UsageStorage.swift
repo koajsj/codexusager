@@ -2,6 +2,15 @@ import Foundation
 import SwiftData
 import CryptoKit
 
+/// Source I/O is distinct from cursor decoding and SwiftData failures.
+enum SourceFileReadError: Error, Sendable { case unreadable }
+
+private func readSourceFile<Value>(_ read: () throws -> Value) throws -> Value {
+    do { return try read() }
+    catch is CancellationError { throw CancellationError() }
+    catch { throw SourceFileReadError.unreadable }
+}
+
 @Model public final class StoredUsage {
     @Attribute(.unique) public var stableID: String
     public var provider: String
@@ -230,33 +239,6 @@ public struct SessionSummary: Sendable, Identifiable {
     public var isManual = false
 }
 
-public struct UsageGroup: Sendable, Identifiable {
-    public var id: String
-    public var totalTokens: Int64
-    public var count: Int
-}
-
-public struct DailyUsage: Sendable, Identifiable {
-    public var id: Date { date }
-    public var date: Date
-    public var totalTokens: Int64
-}
-
-public struct UsageDashboard: Sendable {
-    public var recordCount = 0
-    public var totalTokens: Int64 = 0
-    public var todayTokens: Int64 = 0
-    public var inputTokens: Int64 = 0
-    public var outputTokens: Int64 = 0
-    public var cachedTokens: Int64 = 0
-    public var sessions: [SessionSummary] = []
-    public var projects: [UsageGroup] = []
-    public var models: [UsageGroup] = []
-    public var days: [DailyUsage] = []
-    public var health: [SourceHealth] = []
-    public init() {}
-}
-
 public struct SourceCenterSummary: Sendable {
     public var indexedSessions: Int = 0
     public var indexedRecords: Int = 0
@@ -299,7 +281,7 @@ public struct SourceCenterSummary: Sendable {
         let cursorRow = try modelContext.fetch(FetchDescriptor<StoredCursor>(predicate: #Predicate { $0.path == path })).first
         var cursor = try cursorRow.map { try JSONDecoder().decode(ImportCursor.self, from: $0.payload) }
         var row = cursorRow
-        let attrs = try FileManager.default.attributesOfItem(atPath: path)
+        let attrs = try readSourceFile { try FileManager.default.attributesOfItem(atPath: path) }
         var healthRow = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
         let previousHealth = try healthRow.map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
         if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 4,
@@ -307,10 +289,12 @@ public struct SourceCenterSummary: Sendable {
            (attrs[.size] as? NSNumber)?.uint64Value == cursor.fileSize,
            attrs[.modificationDate] as? Date == cursor.modifiedAt,
            "\((attrs[.systemNumber] as? NSNumber)?.stringValue ?? ""):\((attrs[.systemFileNumber] as? NSNumber)?.stringValue ?? "")" == cursor.fileIdentity,
-           try matchingPrefix(cursor, at: url) { return false }
+           try readSourceFile({ try matchingPrefix(cursor, at: url) }) { return false }
         var changed = false
         repeat {
-            let result = try JSONLImporter.scan(url: url, provider: provider, cursor: cursor, maxRecords: 512, isCancelled: { Task.isCancelled })
+            let result = try readSourceFile {
+                try JSONLImporter.scan(url: url, provider: provider, cursor: cursor, maxRecords: 512, isCancelled: { Task.isCancelled })
+            }
             try Task.checkCancellation()
             do {
                 if result.rebuilt {
@@ -370,14 +354,16 @@ public struct SourceCenterSummary: Sendable {
     }
 
     public func recordFailure(path: String, provider: ProviderID) throws {
-        let row = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
-        var health = row.flatMap { try? JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
-            ?? SourceHealth(provider: provider, sourceFile: path, malformedLines: 0, importedRecords: 0, lastScan: .now, error: nil)
-        health.error = "read_failed"; health.lastScan = .now
-        let data = try JSONEncoder().encode(health)
-        if let row { row.payload = data } else { modelContext.insert(StoredHealth(path: path, payload: data)) }
-        try modelContext.save()
-        invalidateAnalytics()
+        do {
+            let row = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
+            var health = row.flatMap { try? JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
+                ?? SourceHealth(provider: provider, sourceFile: path, malformedLines: 0, importedRecords: 0, lastScan: .now, error: nil)
+            health.error = "read_failed"; health.lastScan = .now
+            let data = try JSONEncoder().encode(health)
+            if let row { row.payload = data } else { modelContext.insert(StoredHealth(path: path, payload: data)) }
+            try modelContext.save()
+            invalidateAnalytics()
+        } catch { modelContext.rollback(); throw error }
     }
 
     /// Preserve explicit user corrections when the deterministic fallback changes.
@@ -522,19 +508,5 @@ public struct SourceCenterSummary: Sendable {
         let id = provider.rawValue
         for row in try modelContext.fetch(FetchDescriptor<StoredQuota>(predicate: #Predicate { $0.provider == id })) { modelContext.delete(row) }
         try modelContext.save()
-    }
-
-    public func dashboard(provider: ProviderID? = nil, now: Date = .now) throws -> UsageDashboard {
-        var query = UsageQuery(); query.period = .all; query.provider = provider
-        let value = try analytics(query: query, now: now)
-        var result = UsageDashboard()
-        result.recordCount = value.recordCount; result.totalTokens = value.tokens.total ?? 0
-        result.todayTokens = provider.map { value.todayByProvider[$0] ?? 0 } ?? (value.today.total ?? 0)
-        result.inputTokens = value.tokens.input ?? 0; result.outputTokens = value.tokens.output ?? 0
-        result.cachedTokens = value.tokens.cacheRead ?? 0; result.sessions = value.sessions
-        result.projects = value.projects.map { UsageGroup(id: $0.id, totalTokens: $0.tokens.total ?? 0, count: $0.sessionCount) }
-        result.models = value.models.map { UsageGroup(id: $0.id, totalTokens: $0.tokens.total ?? 0, count: $0.sessionCount) }
-        result.days = value.trend.map { DailyUsage(date: $0.date, totalTokens: $0.tokens) }; result.health = value.health
-        return result
     }
 }

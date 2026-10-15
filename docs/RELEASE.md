@@ -52,7 +52,7 @@ Actions 监听版本 tag，仅允许当前未签名流程发布 `-preview` 并�
 
 ## 发布门禁
 
-Actions 的 `verify` job 先执行 `swift test`（不启用真实 Provider / 本地会话检查）及工程生成器一致性检查。`release` 必须依赖 `verify` 成功，才允许 Universal Xcode Application 构建、完整 Bundle 检查、DMG / SHA256 和 Release 上传。验证 job 仅有 contents: read，只有发布 job 有 contents: write。所有第三方 Actions 固定到 commit SHA，Xcode 固定到此前成功构建的 26.6。
+Actions 的 `verify` job 先执行 `swift test`（仅合成数据，不访问真实 Provider / 用户会话）及工程生成器一致性检查。`release` 必须依赖 `verify` 成功，才允许 Universal Xcode Application 构建、完整 Bundle 检查、DMG / SHA256 和 Release 上传。验证 job 仅有 contents: read，只有发布 job 有 contents: write。所有第三方 Actions 固定到 commit SHA，Xcode 固定到此前成功构建的 26.6。
 
 本地生成器验证：运行两次 `python3 Scripts/generate_xcode_project.py` 比较文件摘要；已提交状态下再次生成，`git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj` 必须为空。
 
@@ -62,4 +62,15 @@ Actions 的 `verify` job 先执行 `swift test`（不启用真实 Provider / 本
 
 `-showBuildSettings` 使用 `-alltargets`，避免 Scheme 只返回主 App 而漏查 Widget。配置数据只存于临时目录，失败时随脚本清理。`Scripts/tests` 使用合成设置与临时 Bundle 覆盖错误发布模式、版本、团队、App Group 及缺失嵌入产物。
 
-`.github/workflows/ci.yml` 在 main push / PR 上执行工程生成一致性、发布校验脚本测试、Swift 单元测试及 Universal Release 编译。它只有 contents: read，不创建 DMG、Tag 或 Release。Tag 发布流程保留独立验证门槛，并调用同一 `prepare_dmg.sh`，避免维护两套打包逻辑。
+`.github/workflows/ci.yml` 在 main push / PR 上仅执行静态门禁与工程生成一致性；Swift 单元测试和 Universal Release 编译改为 workflow_dispatch 明确选择，默认关闭。它只有 contents: read，不创建 DMG、Tag 或 Release。Tag 发布流程保留独立验证门槛，并调用同一 `prepare_dmg.sh`，避免维护两套打包逻辑。
+
+## 菜单栏与真实来源手工验收
+
+- 冷启动、关闭全部窗口、只打开设置、退出时检查状态项只创建一次，退出后清理；设置和主窗口可从弹出页重新打开。
+- 检查双来源、单额度、多额度、无额度、所选窗口消失、过期、离线及未登录。顶部拥挤时选择极简 / 仅图标；系统自动隐藏或刘海遮挡不能由 App 保证消除。
+- 检查 Light / Dark、高亮、Retina、多屏切换、休眠恢复与 VoiceOver。关闭主窗口后打开菜单，确认仅在到期时执行增量索引，显示最后扫描时间。
+- 经用户授权，手工检查官方 Codex 账户与额度读取、Claude status-line 桥接、当前真实 JSONL 版本；不要将真实文件复制进测试或日志。
+- 检查导出面板防重入、取消后重试，以及退出时已确认的导出 / 备份恢复与设置应用；活动列表在筛选变化、读取失败、数据变更后先刷新再分页。检查来源文件消失 / 恢复时保留旧统计，文件错误不误报数据库不可用。
+- 开启隐藏路径时，数据来源只展示工具名；临时展开后离页或切换隐私偏好，应再次隐藏绝对路径。
+
+历史 v1.0.0 / v1.0.0-preview 发布草稿已收敛到本文件、CHANGELOG 与 PRIVACY；旧包的系统要求与功能以原 Tag 为准。安装步骤仍为下载 DMG、校验 SHA-256、将 App 拖入 Applications；当前源码要求 Tahoe 26+。

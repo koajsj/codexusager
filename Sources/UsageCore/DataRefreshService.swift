@@ -51,6 +51,8 @@ public struct LocalScanResult: Sendable {
     public var completedAt: Date
 }
 
+public enum LocalScanError: Error, Sendable { case storageUnavailable }
+
 /// UI models request refreshes here; views never enumerate source files or call providers.
 public actor DataRefreshService {
     private let codex: CodexProvider
@@ -77,7 +79,10 @@ public actor DataRefreshService {
     public func scan(_ provider: ProviderID, repository: UsageRepository) async throws -> LocalScanResult {
         do { return try await scanFiles(provider, repository: repository) }
         catch is CancellationError { throw CancellationError() }
-        catch { await refreshRepository.scanFailed(provider); throw error }
+        catch {
+            await refreshRepository.scanFailed(provider)
+            throw LocalScanError.storageUnavailable
+        }
     }
     private func scanFiles(_ provider: ProviderID, repository: UsageRepository) async throws -> LocalScanResult {
         let roots = provider == .codex ? await codex.sourceRoots() : await claude.sourceRoots()
@@ -88,7 +93,7 @@ public actor DataRefreshService {
             try Task.checkCancellation()
             do { changed = try await repository.importFile(file, provider: provider) || changed }
             catch is CancellationError { throw CancellationError() }
-            catch {
+            catch is SourceFileReadError {
                 changed = true; fileFailure = true
                 try await repository.recordFailure(path: file.path, provider: provider)
             }

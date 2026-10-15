@@ -10,6 +10,12 @@
 			"path" = "Sources/CodexUsager/App/AnalyticsViewModel.swift";
 			"sourceTree" = "<group>";
 		};
+		68A420D35377D9A2875183B3 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/AppDelegate.swift";
+			"sourceTree" = "<group>";
+		};
 		9A61E1A595FF1ED20D56A5FB = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -154,6 +160,12 @@
 			"path" = "Sources/CodexUsager/Features/WelcomeView.swift";
 			"sourceTree" = "<group>";
 		};
+		BA6437D9B19B0663827BADF3 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/MenuBar/MenuBarPresentation.swift";
+			"sourceTree" = "<group>";
+		};
 		F649C61B47F02081974E311E = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -261,6 +273,7 @@
 			"isa" = "PBXGroup";
 			"children" = (
 				7C48FA872473E4542BC95CB8,
+				68A420D35377D9A2875183B3,
 				9A61E1A595FF1ED20D56A5FB,
 				BD7EC211DB0478D3C020CA82,
 				4D44762607062B76F6F7B6D4,
@@ -285,6 +298,7 @@
 				4390EFC754967616CEAC53B2,
 				8F9325DADED0D086F79607D2,
 				07131E7918D82100C4B6EF34,
+				BA6437D9B19B0663827BADF3,
 				F649C61B47F02081974E311E,
 				0014D8FC28646F49142E6D7C,
 				52CF8FC82425AE0D6CEBEBD2,
@@ -304,6 +318,10 @@
 		9430C82C3ABA7A63EA9790E1 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = 7C48FA872473E4542BC95CB8;
+		};
+		25070D5AE29F8B7205AD56FE = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 68A420D35377D9A2875183B3;
 		};
 		3358C0DD112D21B93E4507FB = {
 			"isa" = "PBXBuildFile";
@@ -401,6 +419,10 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = 07131E7918D82100C4B6EF34;
 		};
+		AECACAD4921D37B9D4AD978E = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = BA6437D9B19B0663827BADF3;
+		};
 		AA440961CB76436AB0A47889 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = F649C61B47F02081974E311E;
@@ -418,6 +440,7 @@
 			"buildActionMask" = 2147483647;
 			"files" = (
 				9430C82C3ABA7A63EA9790E1,
+				25070D5AE29F8B7205AD56FE,
 				3358C0DD112D21B93E4507FB,
 				22BAF9ED694D980CACCE4071,
 				997A8F667FE7CC968C48CF20,
@@ -442,6 +465,7 @@
 				E8123FC649C81CF88F260C74,
 				9EF6F26BFF2DAC6C9BC467A8,
 				64DEEF2EECED0ECFA9645F24,
+				AECACAD4921D37B9D4AD978E,
 				AA440961CB76436AB0A47889,
 				73DFBB66A473A30C776BFD81,
 				1B6E81A0A8D6DD10EFD0C5B0,

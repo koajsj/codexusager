@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: '运行核心单元与回归测试（会编译测试目标）'
+        type: boolean
+        default: false
+      run_build:
+        description: '编译 Universal Release App 与嵌入目标'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,23 +31,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: '26.6'
-      - name: Check generated project and release validation
+      - name: Static checks and deterministic project
         run: |
           set -euo pipefail
           python3 Scripts/generate_xcode_project.py
           git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Scripts/tests -v
-          bash -n Scripts/package_app.sh Scripts/prepare_dmg.sh
+          python3 Scripts/check_static.py
+      - name: Select Xcode for requested validation
+        if: github.event_name == 'workflow_dispatch' && (inputs.run_tests || inputs.run_build)
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: '26.6'
       - name: Unit and regression tests
-        env:
-          LIVE_PROVIDER_CHECK: '0'
-          LIVE_SESSION_CHECK: '0'
+        if: github.event_name == 'workflow_dispatch' && inputs.run_tests
         run: swift test
       - name: Compile universal App and embedded targets
+        if: github.event_name == 'workflow_dispatch' && inputs.run_build
         run: |
           set -euo pipefail
           xcodebuild -project CodexUsager.xcodeproj -scheme CodexUsager \

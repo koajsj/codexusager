@@ -39,8 +39,22 @@ private actor WidgetSnapshotPublisher {
     var claudeStatus: ProviderStatus { get { quotaViewModel.claudeStatus } set { quotaViewModel.claudeStatus = newValue } }
     var codexQuota: QuotaState { get { quotaViewModel.codexQuota } set { quotaViewModel.codexQuota = newValue } }
     var claudeQuota: QuotaState { get { quotaViewModel.claudeQuota } set { quotaViewModel.claudeQuota = newValue } }
-    var analytics: AnalyticsSnapshot { get { analyticsViewModel.snapshot } set { analyticsViewModel.snapshot = newValue } }
-    var query: UsageQuery { get { analyticsViewModel.query } set { guard analyticsViewModel.query != newValue else { return }; analyticsViewModel.query = newValue; reloadAnalytics() } }
+    var analytics: AnalyticsSnapshot {
+        get { analyticsViewModel.snapshot }
+        set {
+            if analyticsViewModel.snapshot.dataRevision != newValue.dataRevision { analyticsViewModel.invalidateActivity() }
+            analyticsViewModel.snapshot = newValue
+        }
+    }
+    var query: UsageQuery {
+        get { analyticsViewModel.query }
+        set {
+            guard analyticsViewModel.query != newValue else { return }
+            analyticsViewModel.invalidateActivity()
+            analyticsViewModel.query = newValue
+            reloadAnalytics()
+        }
+    }
     var sessionEntries: [UsageEntry] { get { analyticsViewModel.sessionEntries } set { analyticsViewModel.sessionEntries = newValue } }
     var isLoadingSession: Bool { get { analyticsViewModel.isLoadingSession } set { analyticsViewModel.isLoadingSession = newValue } }
     var isAggregating: Bool { get { analyticsViewModel.isAggregating } set { analyticsViewModel.isAggregating = newValue } }
@@ -71,7 +85,32 @@ private actor WidgetSnapshotPublisher {
     var notifyCodex10: Bool { get { settingsViewModel.notifyCodex10 } set { settingsViewModel.notifyCodex10 = newValue; notificationChanged(.notifyCodex10, enabled: newValue) } }
     var notifyCodexReset: Bool { get { settingsViewModel.notifyCodexReset } set { settingsViewModel.notifyCodexReset = newValue; notificationChanged(.notifyCodexReset, enabled: newValue) } }
     var notifyClaude25: Bool { get { settingsViewModel.notifyClaude25 } set { settingsViewModel.notifyClaude25 = newValue; notificationChanged(.notifyClaude25, enabled: newValue) } }
-    var openMainWindow: () -> Void = {}
+    @ObservationIgnored private var mainWindowAction: (() -> Void)?
+    @ObservationIgnored private var settingsAction: (() -> Void)?
+    private var pendingMainWindow = false
+    private var pendingSettings = false
+    func registerSceneActions(main: @escaping () -> Void, settings: @escaping () -> Void) {
+        mainWindowAction = main; settingsAction = settings
+        if pendingMainWindow { pendingMainWindow = false; main() }
+        if pendingSettings { pendingSettings = false; settings() }
+    }
+    func openMainWindow() {
+        NSApp.activate()
+        if let mainWindowAction { mainWindowAction() } else { pendingMainWindow = true }
+    }
+    func openSettings() {
+        NSApp.activate()
+        if let settingsAction { settingsAction() } else { pendingSettings = true }
+    }
+    var menuQuotaSelections: [MenuQuotaSelection] {
+        get { settingsViewModel.menuQuotaSelections }
+        set { settingsViewModel.menuQuotaSelections = Array(newValue.prefix(2)); statusBar?.update() }
+    }
+    func setMenuSelection(_ selection: MenuQuotaSelection, enabled: Bool) {
+        var values = menuQuotaSelections.filter { $0 != selection }
+        if enabled, values.count < 2 { values.append(selection) }
+        menuQuotaSelections = values
+    }
     var refreshPolicy: RefreshPolicy { get { settingsViewModel.refreshPolicy } set { settingsViewModel.refreshPolicy = newValue } }
     private var lastActivationRefresh: Date?
     private let refreshService = DataRefreshService()
@@ -79,6 +118,11 @@ private actor WidgetSnapshotPublisher {
     private let widgetPublisher = WidgetSnapshotPublisher()
     private var repository: UsageRepository?
     private var statusBar: StatusBarController?
+    private var mutationTask: Task<Void, Never>?
+    private var exportTask: Task<Void, Never>?
+    @ObservationIgnored private var exportPanel: NSSavePanel?
+    private var startupTask: Task<Void, Never>?
+    private var isShuttingDown = false
     private var refreshTask: Task<Void, Never>?
     private var importTask: Task<Void, Never>?
     private var resetTask: Task<Void, Never>?
@@ -114,7 +158,6 @@ private actor WidgetSnapshotPublisher {
         return .notInstalled
     }
     var menuWindows: [QuotaWindow] { QuotaDisplayPolicy.menuWindows(from: selectedQuota.snapshot?.windows ?? []) }
-    var selectedTodayTokens: Int64? { hasIndexed ? analytics.todayByProvider[selectedProvider] : nil }
     func status(_ provider: ProviderID) -> ProviderStatus { quotaViewModel.status(provider) }
     func quota(_ provider: ProviderID) -> QuotaState { quotaViewModel.quota(provider) }
     func menuNumber(_ window: QuotaWindow) -> Double { menuValue == .remaining ? window.remainingPercent : window.usedPercent }
@@ -146,6 +189,7 @@ private actor WidgetSnapshotPublisher {
         appearance = value.appearance
         if let source = MenuSource(rawValue: value.menuSource) { menuSource = source }
         if let style = MenuStyle(rawValue: value.menuStyle) { menuStyle = style }
+        menuQuotaSelections = value.menuQuotaSelections ?? []
         if let number = MenuValue(rawValue: value.menuValue) { menuValue = number }
         if let saved = value.refreshPolicy.flatMap(RefreshPolicy.init(rawValue:)) { refreshPolicy = saved }
         else { refreshAutomatically = value.refreshAutomatically }
@@ -168,19 +212,21 @@ private actor WidgetSnapshotPublisher {
     }
 
     func start() {
-        guard !isStarting, repository == nil, storageError == nil else { return }
+        guard !isShuttingDown, !isStarting, repository == nil, storageError == nil else { return }
         isStarting = true
         statusBar = statusBar ?? StatusBarController(model: self)
         listenForQuotaEvents(); refreshAll(); startPolling()
-        Task {
+        startupTask = Task {
             do {
                 let repo = try await Task.detached(priority: .utility) { () throws -> UsageRepository in
                     let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/CodexUsager")
                     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
                     return UsageRepository(modelContainer: try UsageStorage.makeContainer(url: root.appendingPathComponent("usage.store")))
                 }.value
+                try Task.checkCancellation()
                 try await repo.scrubStoredAccountIdentities()
                 try await repo.upgradeSourceIndex()
+                try Task.checkCancellation()
                 repository = repo
                 let fallbackSettings = backupSettings()
                 backupModel = BackupViewModel(service: BackupService(repository: repo),
@@ -188,6 +234,7 @@ private actor WidgetSnapshotPublisher {
                     applySettings: { [weak self] in self?.applyBackupSettings($0) },
                     didRestore: { [weak self] in self?.refreshAfterRestore() })
                 for provider in ProviderID.allCases {
+                    try Task.checkCancellation()
                     if let fresh = quota(provider).snapshot {
                         try await repo.saveQuota(fresh)
                         await recordQuotaObservation(fresh, allowNotification: true)
@@ -199,9 +246,12 @@ private actor WidgetSnapshotPublisher {
                         await loadQuotaHistory(provider, accountKey: key)
                     }
                 }
+                try Task.checkCancellation()
                 reloadAnalytics(); importSources()
                 reloadSourceSummaries()
                 statusBar?.update(); publishWidget()
+            } catch is CancellationError {
+                // Termination must not publish a late startup error.
             } catch {
                 let message = "本地数据库无法打开或迁移。请检查磁盘空间与文件权限后重新打开 App。"
                 storageError = message
@@ -215,12 +265,14 @@ private actor WidgetSnapshotPublisher {
         AccountBinding.key(provider: status.id, identity: status.account?.identity)
     }
     func loginChatGPT() {
+        guard !isShuttingDown else { return }
         authenticationViewModel.login { [weak self] in
             await self?.refreshService.resetCodexConnection()
             await self?.invalidateAccount()
         }
     }
     func logoutChatGPT() {
+        guard !isShuttingDown else { return }
         authenticationViewModel.logout { [weak self] in
             await self?.refreshService.resetCodexConnection()
             await self?.invalidateAccount()
@@ -237,12 +289,20 @@ private actor WidgetSnapshotPublisher {
         guard refreshTask == nil else { return }
         refreshAll()
     }
-    func refreshMenuQuotaIfNeeded() {
-        let state = selectedQuota
-        let success = state.snapshot?.windows.map(\.fetchedAt).min()
-        if RefreshSchedule.menuQuotaIsDue(lastSuccess: success, now: .now) { refreshQuotaIfIdle() }
+    func refreshMenuIfNeeded() {
+        guard !isShuttingDown else { return }
+        let now = Date()
+        let retryAllowed = refreshViewModel.schedule.lastQuotaAttempt.map { now.timeIntervalSince($0) >= 30 } ?? true
+        if retryAllowed, ProviderID.allCases.contains(where: { provider in
+            RefreshSchedule.menuQuotaIsDue(lastSuccess: quota(provider).snapshot?.windows.map(\.fetchedAt).min(), now: .now)
+        }) { refreshQuotaIfIdle() }
+        if refreshViewModel.schedule.scanIsDue(policy: refreshPolicy, mainWindowActive: true, now: .now) {
+            importSources()
+        }
     }
+    func refreshStatusBarLayout() { statusBar?.update() }
     func refreshAll() {
+        guard !isShuttingDown else { return }
         if refreshTask != nil { pendingRefresh = true; return }
         refreshViewModel.schedule.lastQuotaAttempt = .now
         refreshTask = Task {
@@ -367,6 +427,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     private func invalidateAccount() async {
+        guard !isShuttingDown else { return }
         analyticsViewModel.liveActivities = []
         accountGeneration += 1; codexQuota = QuotaState(); codexStatus = ProviderStatus(id: .codex)
         quotaHistory[.codex] = []
@@ -398,6 +459,7 @@ private actor WidgetSnapshotPublisher {
         statusBar?.update(); publishWidget()
     }
     private func scheduleResetRefresh() {
+        guard !isShuttingDown else { return }
         resetTask?.cancel()
         let windows = (codexQuota.snapshot?.windows ?? []) + (claudeQuota.snapshot?.windows ?? [])
         guard let due = windows.compactMap(\.resetsAt).filter({ $0 > Date() }).min() else { return }
@@ -413,7 +475,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     func importSources() {
-        guard importTask == nil, let repository else { return }
+        guard !isShuttingDown, importTask == nil, let repository else { return }
         refreshViewModel.schedule.lastScanAttempt = .now
         isImporting = true
         importTask = Task {
@@ -423,21 +485,27 @@ private actor WidgetSnapshotPublisher {
                     let result = try await refreshService.scan(provider, repository: repository)
                     changed = result.changed || changed
                 } catch is CancellationError { break }
+                catch LocalScanError.storageUnavailable {
+                    // Earlier import batches may already have committed before storage failed.
+                    changed = true
+                    errorCenter.report(AppError("本地索引读写失败。", debugDetail: "scan_storage",
+                        recoverySuggestion: "检查磁盘空间与数据库权限后重新刷新。"), for: .scan(provider))
+                    persistenceFailed()
+                }
                 catch {
                     errorCenter.report(AppError("本地会话扫描失败。", debugDetail: "scan: \(type(of: error))",
                         recoverySuggestion: "检查来源目录权限和磁盘空间后重新刷新。"), for: .scan(provider))
-                    persistenceFailed()
                 }
             }
             let metadata = await refreshService.metadata()
             if !Task.isCancelled { applySourceRefresh(metadata) }
-            if changed { reloadAnalytics(); reloadSourceSummaries() }
+            if changed, !Task.isCancelled { reloadAnalytics(); reloadSourceSummaries() }
             isImporting = false; importTask = nil
         }
     }
     func cancelImport() { importTask?.cancel() }
     func reloadAnalytics() {
-        guard let repository else { return }
+        guard !isShuttingDown, let repository else { return }
         analyticsGeneration += 1
         let generation = analyticsGeneration, filter = query
         let now = Date(), timeContext = AnalyticsTimeContext()
@@ -464,7 +532,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     private func reloadSourceSummaries() {
-        guard let repository else { return }
+        guard !isShuttingDown, let repository else { return }
         sourceSummaryGeneration += 1
         let generation = sourceSummaryGeneration
         sourceSummaryTask?.cancel()
@@ -492,6 +560,7 @@ private actor WidgetSnapshotPublisher {
         lastImport = sourceRefresh.values.compactMap(\.scannedAt).max()
     }
     func loadSession(_ session: SessionSummary?) {
+        guard !isShuttingDown else { return }
         selectedSession = session; detailGeneration += 1
         let generation = detailGeneration
         detailTask?.cancel(); sessionEntries = []
@@ -514,7 +583,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     func loadActivity(reset: Bool = true) {
-        guard let repository else { return }
+        guard !isShuttingDown, let repository else { return }
         analyticsViewModel.loadActivity(reset: reset, query: query) { [query] cursor in
             try await repository.activity(query: query, after: cursor)
         }
@@ -527,29 +596,36 @@ private actor WidgetSnapshotPublisher {
     func restoreProject(_ path: String) { mutate { try await $0.restoreProject(path) } }
     func savePrice(_ value: ModelPrice) { mutate { try await $0.savePrice(value) } }
     private func mutate(_ operation: @escaping @Sendable (UsageRepository) async throws -> Void) {
-        guard let repository, !isSaving else { return }
+        guard !isShuttingDown, let repository, !isSaving else { return }
         operationError = nil; isSaving = true
-        Task {
+        mutationTask = Task {
             do { try await operation(repository); reloadAnalytics(); loadSession(selectedSession) }
             catch {
                 operationError = error.localizedDataMessage
                 errorCenter.report(AppError(error.localizedDataMessage, debugDetail: "mutation: \(type(of: error))",
                     recoverySuggestion: "检查输入及本地数据库状态后重试。"), for: .operation)
             }
-            isSaving = false
+            isSaving = false; mutationTask = nil
         }
     }
     func export(kind: ExportKind, format: ExportFormat, revealPaths: Bool) {
-        guard let repository, !isExporting else { return }
+        guard !isShuttingDown, let repository, !isExporting else { return }
+        isExporting = true; operationError = nil; errorCenter.clear(.export)
         let panel = NSSavePanel()
+        exportPanel = panel
         panel.allowedContentTypes = [format == .csv ? .commaSeparatedText : .json]
         panel.nameFieldStringValue = "CodexUsager-\(kind.rawValue).\(format.rawValue)"
         panel.canCreateDirectories = true
         panel.begin { [weak self] response in
-            guard let self, response == .OK, let url = panel.url else { return }
+            guard let self else { return }
+            self.exportPanel = nil
+            guard !self.isShuttingDown, response == .OK, let url = panel.url else {
+                self.isExporting = false
+                return
+            }
             let filter = self.query
-            self.operationError = nil; self.isExporting = true
-            Task {
+            self.exportTask = Task {
+                defer { self.isExporting = false; self.exportTask = nil }
                 do { try await repository.export(to: url, kind: kind, format: format, query: filter, revealPaths: revealPaths) }
                 catch {
                     let message = "导出失败。请检查目标文件夹权限和磁盘空间后重试。"
@@ -557,7 +633,6 @@ private actor WidgetSnapshotPublisher {
                     self.errorCenter.report(AppError(message, debugDetail: "export: \(type(of: error))",
                         recoverySuggestion: "检查目标文件夹权限和磁盘空间后重试。"), for: .export)
                 }
-                self.isExporting = false
             }
         }
     }
@@ -568,6 +643,7 @@ private actor WidgetSnapshotPublisher {
             recoverySuggestion: "检查磁盘空间和文件权限后刷新。"), for: .storage)
     }
     private func refreshAfterRestore() {
+        guard !isShuttingDown else { return }
         reloadAnalytics(); loadSession(selectedSession); reloadSourceSummaries()
         restoredHistoryTask?.cancel()
         restoredHistoryTask = Task {
@@ -580,13 +656,13 @@ private actor WidgetSnapshotPublisher {
         }
     }
     private func recordQuotaObservation(_ snapshot: QuotaSnapshot, allowNotification: Bool) async {
-        guard let repository, let key = snapshot.accountKey else { return }
+        guard !isShuttingDown, let repository, let key = snapshot.accountKey else { return }
         do {
             let previous = try await repository.quotaHistory(provider: snapshot.provider, accountKey: key,
                                                              since: Date().addingTimeInterval(-90 * 24 * 3600))
             try await repository.recordQuotaHistory(snapshot)
             await loadQuotaHistory(snapshot.provider, accountKey: key)
-            guard allowNotification, notifyCodex25 || notifyCodex10 || notifyCodexReset || notifyClaude25,
+            guard !isShuttingDown, allowNotification, notifyCodex25 || notifyCodex10 || notifyCodexReset || notifyClaude25,
                   quota(snapshot.provider).snapshot?.accountKey == key,
                   quota(snapshot.provider).snapshot?.fetchedAt == snapshot.fetchedAt,
                   !quota(snapshot.provider).isStale else { return }
@@ -619,6 +695,7 @@ private actor WidgetSnapshotPublisher {
         catch { persistenceFailed() }
     }
     private func publishWidget() {
+        guard !isShuttingDown else { return }
         let providers = ProviderID.allCases.map { provider in
             let status = status(provider), quota = quota(provider)
             return WidgetProviderSnapshot(id: provider.rawValue, plan: status.account?.localizedPlan, state: status.health.rawValue,
@@ -669,14 +746,21 @@ private actor WidgetSnapshotPublisher {
                 recoverySuggestion: "检查剪贴板权限后重试。"), for: .operation)
         }
     }
-    func shutdown() {
-        refreshTask?.cancel(); importTask?.cancel(); refreshViewModel.stopPolling(); resetTask?.cancel()
-        analyticsViewModel.shutdown()
-        quotaEventsTask?.cancel(); analyticsTask?.cancel(); detailTask?.cancel(); widgetTask?.cancel()
-        sourceSummaryTask?.cancel()
-        restoredHistoryTask?.cancel()
-        backupModel?.shutdown()
-        authenticationViewModel.shutdown()
-        Task { await refreshService.stop() }
+    func shutdown() async {
+        isShuttingDown = true
+        exportPanel?.cancel(nil); exportPanel = nil
+        backupModel?.prepareForShutdown()
+        let pending = [startupTask, refreshTask, importTask, resetTask, quotaEventsTask, analyticsTask,
+                       detailTask, widgetTask, sourceSummaryTask, restoredHistoryTask].compactMap { $0 }
+        // Let already-confirmed user writes finish instead of aborting a save at exit.
+        let writes = [mutationTask, exportTask].compactMap { $0 }
+        for task in pending { task.cancel() }
+        refreshViewModel.stopPolling()
+        statusBar?.close(); statusBar = nil
+        await analyticsViewModel.shutdown()
+        await authenticationViewModel.shutdown()
+        await refreshService.stop()
+        await backupModel?.shutdown()
+        for task in pending + writes { await task.value }
     }
 }

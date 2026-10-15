@@ -43,8 +43,9 @@ struct ActivityCenterPage: View {
             }
             Text("调用按来源用量事件计数，不等同于 HTTP 请求。耗时、状态和模型缺失时显示 —，不读取任务正文。")
                 .font(.caption).foregroundStyle(.secondary)
-            if let displayedQuery = state.activityQuery, displayedQuery != model.query {
-                Text("暂时显示上次筛选结果，正在更新或等待重试。")
+            if !state.activityEntries.isEmpty,
+               state.activityNeedsRefresh || state.activityQuery != model.query {
+                Text("暂时显示上次读取结果，正在更新或等待刷新；更新成功后才能继续分页。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let error = state.activityError, state.activityEntries.isEmpty {
@@ -90,13 +91,13 @@ struct ActivityCenterPage: View {
                 }
                 Spacer()
                 Button("详情") { detail = state.activityEntries.first { $0.id == selectedID } }.disabled(selectedID == nil)
-                if state.activityHasMore { Button("加载更多") { model.loadActivity(reset: false) }.disabled(state.activityLoading || state.activityQuery != model.query) }
+                if state.activityHasMore { Button("加载更多") { model.loadActivity(reset: false) }.disabled(state.activityLoading || state.activityNeedsRefresh || state.activityQuery != model.query) }
             }
         }
         .padding(14)
         .task(id: loadKey) { model.loadActivity() }
         .onChange(of: state.activityAsOf) { _, _ in selectedID = nil }
-        .onDisappear { state.shutdown() }
+        .onDisappear { state.invalidateActivity() }
         .sheet(item: $detail) { UsageEventDetail(entry: $0) }
     }
 }

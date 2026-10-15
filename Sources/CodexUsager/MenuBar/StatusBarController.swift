@@ -2,131 +2,134 @@ import AppKit
 import SwiftUI
 import UsageCore
 
-private final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-@MainActor final class StatusBarController: NSObject {
+@MainActor final class StatusBarController: NSObject, NSPopoverDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private unowned let model: AppModel
-    private var label: ClickThroughHostingView<StatusLabel>?
+    private let label = StatusLabelView(frame: .zero)
+    private var accessibilityLabel: String?
 
     init(model: AppModel) {
         self.model = model
         super.init()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 310, height: 370)
-        popover.contentViewController = NSHostingController(rootView: MenuPopover(model: model))
-        if let button = item.button { button.target = self; button.action = #selector(togglePopover) }
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(rootView: MenuPopover(model: model, dismiss: { [weak self] in self?.popover.performClose(nil) }))
+        if let button = item.button {
+            button.target = self; button.action = #selector(togglePopover)
+            label.frame = button.bounds
+            label.autoresizingMask = [.width, .height]
+            button.addSubview(label)
+        }
         update()
     }
     func update() {
-        guard let button = item.button else { return }
-        item.length = preferredWidth
-        let description = model.menuWindows.prefix(2).map { window in
-            "\(window.localizedName) \(model.menuNumber(window).formatted(.number.precision(.fractionLength(0))))%"
-        }.joined(separator: "，")
-        button.setAccessibilityLabel(description.isEmpty
-            ? "\(model.selectedStatus.displayName)，\(model.selectedStatus.health.localizedLabel)"
-            : "\(model.selectedStatus.displayName)，\(description)\(model.selectedQuota.isStale ? "，数据已过期" : "")")
-        let view = label ?? ClickThroughHostingView(rootView: StatusLabel(model: model))
-        view.rootView = StatusLabel(model: model)
-        view.frame = button.bounds
-        view.autoresizingMask = [.width, .height]
-        if label == nil { button.addSubview(view); label = view }
+        let presentation = MenuBarPresentation(model: model)
+        if label.rows != presentation.rows { label.rows = presentation.rows }
+        if let button = item.button, label.frame != button.bounds { label.frame = button.bounds }
+        let width = label.preferredWidth
+        if item.length != width { item.length = width }
+        if accessibilityLabel != presentation.accessibilityLabel {
+            accessibilityLabel = presentation.accessibilityLabel
+            item.button?.setAccessibilityLabel(presentation.accessibilityLabel)
+            item.button?.toolTip = presentation.accessibilityLabel
+        }
+        label.refreshAppearance()
     }
-    private var preferredWidth: CGFloat {
-        let windows = Array(model.menuWindows.prefix(2))
-        if model.menuStyle == .icon { return 25 }
-        let font = NSFont.systemFont(ofSize: model.menuStyle == .minimal ? 11 : 10, weight: .medium)
-        func measured(_ text: String) -> CGFloat {
-            ceil((text as NSString).size(withAttributes: [.font: font]).width)
-        }
-        let content: CGFloat
-        if model.selectedQuota.isStale, !windows.isEmpty {
-            content = measured("额度已过期")
-        } else if windows.isEmpty {
-            content = measured(model.selectedStatus.health.localizedLabel)
-        } else if model.menuStyle == .minimal {
-            content = measured("\(model.menuNumber(windows[0]).formatted(.number.precision(.fractionLength(0))))%")
-        } else if model.menuStyle == .quotaCountdown {
-            content = max(measured("\(windows[0].localizedName)  \(model.menuNumber(windows[0]).formatted(.number.precision(.fractionLength(0))))%"),
-                          measured(windows[0].resetsAt == nil ? "重置时间未提供" : "00:00:00"))
-        } else {
-            content = windows.map { measured($0.localizedName) + measured("\(model.menuNumber($0).formatted(.number.precision(.fractionLength(0))))%") + 8 }.max() ?? 0
-        }
-        return min(230, max(38, 15 + 5 + content + 12))
+    func close() {
+        popover.performClose(nil)
+        NSStatusBar.system.removeStatusItem(item)
     }
     @objc private func togglePopover() {
         guard let button = item.button else { return }
         if popover.isShown { popover.performClose(nil) }
         else {
+            let height = min(560, max(200, (button.window?.screen?.visibleFrame.height ?? 600) - 40))
+            popover.contentSize = NSSize(width: 360, height: height)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            model.refreshMenuQuotaIfNeeded()
+            button.highlight(true); label.refreshAppearance()
+            model.refreshMenuIfNeeded()
         }
+    }
+    func popoverDidClose(_ notification: Notification) {
+        item.button?.highlight(false); label.refreshAppearance()
     }
 }
 
-private struct StatusLabel: View {
-    let model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(nsImage: StatusIcon.image)
-                .resizable().interpolation(.high)
-                .frame(width: 15, height: 14)
-                .accessibilityHidden(true)
-            if model.menuStyle == .icon {
-                EmptyView()
-            } else if model.selectedQuota.isStale && !model.menuWindows.isEmpty {
-                Text("额度已过期").font(.system(size: 11, weight: .medium)).lineLimit(1)
-            } else if model.menuWindows.isEmpty {
-                Text(model.selectedStatus.health.localizedLabel)
-                    .font(.system(size: 11, weight: .medium)).lineLimit(1)
-            } else if model.menuStyle == .minimal {
-                Text(number(model.menuWindows[0]))
-                    .font(.system(size: 11, weight: .medium))
-                    .monospacedDigit()
-            } else if model.menuStyle == .quotaCountdown {
-                VStack(alignment: .leading, spacing: -1) {
-                    Text("\(model.menuWindows[0].localizedName)  \(number(model.menuWindows[0]))")
-                    if let due = model.menuWindows[0].resetsAt {
-                        let now = Date()
-                        if due > now {
-                            Text(timerInterval: now...due, countsDown: true).monospacedDigit()
-                        } else { Text("正在更新") }
-                    } else { Text("重置时间未提供") }
-                }
-                .font(.system(size: 10, weight: .medium))
-                .lineLimit(1)
-            } else {
-                VStack(alignment: .leading, spacing: -1) {
-                    ForEach(Array(model.menuWindows.prefix(2))) { window in
-                        HStack(spacing: 3) {
-                            Text(window.localizedName).lineLimit(1).truncationMode(.middle)
-                                .minimumScaleFactor(0.82)
-                            Spacer(minLength: 2)
-                            Text(model.menuNumber(window), format: .number.precision(.fractionLength(0)))
-                                .monospacedDigit().fixedSize(horizontal: true, vertical: false)
-                                .contentTransition(reduceMotion ? .identity : .numericText())
-                            Text("%").padding(.leading, -3)
-                        }
-                    }
-                }
-                .font(.system(size: 10, weight: .medium))
-            }
+/// Measurement and drawing share fonts. The button retains all native mouse handling.
+@MainActor private final class StatusLabelView: NSView {
+    var rows: [MenuBarPresentation.Row] = [] {
+        didSet {
+            guard rows != oldValue else { return }
+            measuredWidth = nil
+            needsDisplay = true
         }
-        .foregroundStyle(.primary)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 3)
-        .accessibilityLabel(model.selectedStatus.displayName + " " + (model.menuWindows.isEmpty
-            ? model.selectedStatus.health.localizedLabel
-            : model.menuWindows.map { "\($0.localizedName) \(number($0))" }.joined(separator: ", ")) +
-            (model.selectedQuota.isStale ? "，上次已知值" : ""))
     }
-    private func number(_ window: QuotaWindow) -> String {
-        "\(model.menuNumber(window).formatted(.number.precision(.fractionLength(0))))%"
+    private var measuredWidth: (height: CGFloat, width: CGFloat)?
+    private var lastHighlighted: Bool?
+    private let iconView = NSImageView()
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        iconView.image = StatusIcon.image
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.setAccessibilityElement(false)
+        addSubview(iconView)
+    }
+    required init?(coder: NSCoder) { return nil }
+    override func layout() {
+        super.layout()
+        let frame = NSRect(x: 4, y: (bounds.height - 14) / 2, width: 14, height: 14)
+        if iconView.frame != frame { iconView.frame = frame }
+    }
+    private var textColor: NSColor {
+        (superview as? NSButton)?.isHighlighted == true ? .selectedMenuItemTextColor : .labelColor
+    }
+    func refreshAppearance(force: Bool = false) {
+        let highlighted = (superview as? NSButton)?.isHighlighted == true
+        guard force || lastHighlighted != highlighted else { return }
+        lastHighlighted = highlighted
+        iconView.contentTintColor = textColor
+        needsDisplay = true
+    }
+    private var fontSize: CGFloat {
+        rows.count > 1 ? min(10, max(8, floor(bounds.height / 2) - 2)) : 11
+    }
+    private var titleFont: NSFont { .systemFont(ofSize: fontSize, weight: .medium) }
+    private var numberFont: NSFont { .monospacedDigitSystemFont(ofSize: fontSize, weight: .medium) }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshAppearance(force: true)
+    }
+    private func width(_ text: String, font: NSFont) -> CGFloat {
+        ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+    var preferredWidth: CGFloat {
+        if let measuredWidth, measuredWidth.height == bounds.height { return measuredWidth.width }
+        guard !rows.isEmpty else { return NSStatusBar.system.thickness }
+        let measured = rows.map { width($0.title, font: titleFont) + width($0.value, font: numberFont) + 6 }.max() ?? 0
+        let result = min(140, max(72, measured + 30))
+        measuredWidth = (bounds.height, result)
+        return result
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let color = textColor
+        guard !rows.isEmpty else { return }
+        let lineHeight = min(ceil(titleFont.ascender - titleFont.descender), bounds.height / CGFloat(rows.count))
+        let start = (bounds.height - lineHeight * CGFloat(rows.count)) / 2
+        for (index, row) in rows.enumerated() {
+            let y = start + CGFloat(rows.count - index - 1) * lineHeight
+            let valueWidth = width(row.value, font: numberFont)
+            let textWidth = max(0, bounds.width - 28)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingMiddle
+            paragraph.alignment = .left
+            (row.title as NSString).draw(in: NSRect(x: 23, y: y, width: max(0, textWidth - valueWidth - 4), height: lineHeight),
+                withAttributes: [.font: titleFont, .foregroundColor: color, .paragraphStyle: paragraph])
+            (row.value as NSString).draw(in: NSRect(x: bounds.width - 5 - valueWidth, y: y, width: valueWidth, height: lineHeight),
+                withAttributes: [.font: numberFont, .foregroundColor: color])
+        }
     }
 }
 
@@ -156,64 +159,77 @@ private struct StatusLabel: View {
 
 private struct MenuPopover: View {
     let model: AppModel
+    let dismiss: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                CodeMark().stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                    .frame(width: 16, height: 16)
-                Text(model.selectedStatus.displayName).font(.headline)
-                Spacer()
-                if model.isRefreshing { ProgressView().controlSize(.small) }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Image(nsImage: StatusIcon.image).accessibilityHidden(true)
+                        Text("CodexUsager").font(.headline)
+                        Spacer()
+                        if model.isRefreshing || model.isImporting { ProgressView().controlSize(.small) }
+                    }
+                    ForEach(ProviderID.allCases, id: \.self) { provider in
+                        let status = model.status(provider)
+                        let quota = model.quota(provider)
+                        Divider()
+                        HStack {
+                            Text(provider.title).font(.headline)
+                            Spacer(minLength: 4)
+                            Text(status.account?.localizedPlan ?? "未知套餐").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        HStack {
+                            StatusBadge(health: status.health)
+                            if quota.isStale, quota.snapshot?.windows.isEmpty == false { Text("上次已知额度 · 已过期").font(.caption2).foregroundStyle(.orange) }
+                        }
+                        if let windows = quota.snapshot?.windows, !windows.isEmpty {
+                            ForEach(windows) { window in QuotaRow(window: window, isStale: quota.isStale || window.isAwaitingRefresh(at: .now)) }
+                        } else {
+                            Text(status.quotaAvailability.localizedLabel).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        if let issue = status.issue {
+                            Text(issue.userMessage).font(.caption).foregroundStyle(.orange)
+                            Text(issue.recoverySuggestion).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let updated = quota.snapshot?.fetchedAt {
+                            Text("额度更新：\(updated.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let error = model.sourceRefresh[provider]?.scanError {
+                            Text("会话扫描：\(error)").font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+                    Divider()
+                    if model.isImporting {
+                        Text("正在增量索引，先显示已有统计。").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    LabeledContent("今日 Token") {
+                        TokenNumber(value: model.hasIndexed ? model.analytics.today.total : nil, compact: true).monospacedDigit()
+                    }
+                    if let last = model.lastImport {
+                        Text("最近索引：\(last.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else { Text("尚未完成本地索引").font(.caption2).foregroundStyle(.secondary) }
+                    if let issue = model.storageError ?? model.operationError {
+                        Text(issue).font(.caption).foregroundStyle(.orange)
+                    }
+                    if MenuBarPresentation(model: model).selectionUnavailable {
+                        Text("所选额度窗口暂不可用；未能匹配任何窗口时显示默认来源。可在设置中重新选择。")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }.padding(14)
             }
-            Text(model.selectedStatus.account?.localizedPlan ?? model.selectedStatus.health.localizedLabel)
-                .font(.subheadline).foregroundStyle(.secondary)
             Divider()
-            if model.menuWindows.isEmpty {
-                ContentUnavailableView(model.selectedStatus.quotaAvailability.localizedLabel, systemImage: "gauge", description: Text(model.selectedStatus.health.localizedLabel))
-                    .frame(height: 100)
-            } else {
-                ForEach(model.menuWindows) { window in QuotaRow(window: window, isStale: model.selectedQuota.isStale) }
-            }
-            HStack {
-                Text("今日 Token")
-                Spacer()
-                if let count = model.selectedTodayTokens {
-                    Text(count, format: .number).monospacedDigit()
-                } else { Text("—") }
-            }.font(.subheadline)
-            if let latest = model.analytics.homeRecentCalls.first(where: { $0.provider == model.selectedProvider }) {
-                LabeledContent("最近模型", value: latest.model ?? "未提供").font(.caption)
-                LabeledContent("最近 Session", value: latest.sessionID).font(.caption).lineLimit(1).truncationMode(.middle)
-            }
-            HStack(spacing: 6) {
-                Circle().fill(model.selectedQuota.isStale ? Color.orange : Color.green).frame(width: 6, height: 6)
-                Text(model.selectedQuota.isStale ? "数据可能已过期" : model.selectedStatus.health.localizedLabel)
-            }.font(.caption).foregroundStyle(.secondary)
-            Divider()
-            HStack {
-                Button("打开主窗口") { model.openMainWindow() }
-                Spacer()
-                Button("刷新额度") { model.refreshQuotaIfIdle() }
-            }
+            HStack(spacing: 12) {
+                Button("打开主窗口") { dismiss(); model.openMainWindow() }
+                Button("刷新") { model.refreshData() }.disabled(model.isRefreshing || model.isImporting)
+                Spacer(minLength: 0)
+                Button { dismiss(); model.openSettings() } label: { Image(systemName: "gearshape") }.help("设置").accessibilityLabel("设置")
+                Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.help("退出 CodexUsager").accessibilityLabel("退出 CodexUsager")
+            }.buttonStyle(.borderless).font(.caption).padding(12)
         }
-        .padding(16)
-        .frame(width: 310)
-    }
-}
-
-private struct CodeMark: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let x = rect.width, y = rect.height
-        path.move(to: CGPoint(x: x * 0.30, y: y * 0.18))
-        path.addLine(to: CGPoint(x: x * 0.08, y: y * 0.5))
-        path.addLine(to: CGPoint(x: x * 0.30, y: y * 0.82))
-        path.move(to: CGPoint(x: x * 0.70, y: y * 0.18))
-        path.addLine(to: CGPoint(x: x * 0.92, y: y * 0.5))
-        path.addLine(to: CGPoint(x: x * 0.70, y: y * 0.82))
-        path.move(to: CGPoint(x: x * 0.58, y: y * 0.08))
-        path.addLine(to: CGPoint(x: x * 0.42, y: y * 0.92))
-        return path
+        .frame(width: 360)
     }
 }
 

@@ -16,6 +16,8 @@ struct UsagePage: View {
     var body: some View {
         PageFrame {
             VStack(alignment: .leading, spacing: 14) {
+                UsageHomeSummary(model: model)
+                Divider()
                 AnalyticsFilters(model: model)
                 HStack {
                     if model.isAggregating { ProgressView().controlSize(.small) }
@@ -34,6 +36,26 @@ struct UsagePage: View {
                     if model.analytics.unavailableTotalCount > 0 {
                         Text("\(model.analytics.unavailableTotalCount) 条记录缺少完整 Total；总计与占比不可用，图表仅汇总已知 Total，不代表完整消耗。")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("来源与模型 · 当前筛选范围").font(.headline)
+                        ForEach(model.analytics.providers) { provider in
+                            DisclosureGroup {
+                                ForEach(model.analytics.models.filter { $0.provider == provider.id }) { item in
+                                    HStack {
+                                        Text(item.name == "unknown" ? "未知模型" : item.name).lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        TokenNumber(value: item.tokens.total, compact: true).font(.caption)
+                                    }.padding(.leading, 8)
+                                }
+                            } label: {
+                                HStack {
+                                    Text(provider.id.title)
+                                    Spacer(minLength: 4)
+                                    TokenNumber(value: provider.tokens, compact: true)
+                                }
+                            }
+                        }
                     }
                     DashboardGroup("时间趋势") {
                         Picker("聚合", selection: $grouping) {

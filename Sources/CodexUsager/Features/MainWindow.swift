@@ -3,42 +3,32 @@ import SwiftUI
 import UsageCore
 
 private enum MainPage: String, CaseIterable, Identifiable {
-    case overview, activity, usage, sessions, projects, models, sources
+    case overview, usage, sources
     var id: String { rawValue }
     var title: String {
-        switch self {
-        case .overview: String(localized: "概览")
-        case .activity: String(localized: "活动中心")
-        case .usage: String(localized: "用量")
-        case .sessions: String(localized: "会话")
-        case .projects: String(localized: "项目")
-        case .models: String(localized: "模型")
-        case .sources: String(localized: "数据来源")
-        }
+        switch self { case .overview: "额度监控"; case .usage: "用量分析"; case .sources: "数据来源" }
     }
     var symbol: String {
-        switch self {
-        case .overview: "square.grid.2x2"
-        case .activity: "waveform.path.ecg"
-        case .usage: "chart.bar.xaxis"
-        case .sessions: "clock.arrow.circlepath"
-        case .projects: "folder"
-        case .models: "cpu"
-        case .sources: "externaldrive"
-        }
+        switch self { case .overview: "gauge.with.dots.needle.50percent"; case .usage: "chart.bar.xaxis"; case .sources: "externaldrive" }
+    }
+}
+private enum AnalysisPage: String, CaseIterable, Identifiable {
+    case overview, models, projects, sessions, activity
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .overview: "总览"; case .models: "模型"; case .projects: "项目"; case .sessions: "会话"; case .activity: "活动" }
     }
 }
 
 struct MainWindow: View {
     @Bindable var model: AppModel
-    @Environment(\.openWindow) private var openWindow
     @State private var selection: MainPage? = .overview
+    @State private var analysisPage: AnalysisPage = .overview
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var inspectorPresented = false
     @State private var autoCollapsedSidebar = false
     @State private var sessionSelection: String?
     @State private var detailSession: SessionSummary?
-    @State private var manualEntry: ManualUsage?
     @State private var newManualSheet = false
     @State private var projectEntry: ProjectSummary?
     @State private var priceEntry: ModelSummary?
@@ -56,6 +46,14 @@ struct MainWindow: View {
             } detail: {
                 GeometryReader { detailGeometry in
                 VStack(spacing: 0) {
+                    if selection == .usage {
+                        Picker("分析页面", selection: $analysisPage) {
+                            ForEach(AnalysisPage.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented).controlSize(.small)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        Divider()
+                    }
                     content(width: max(0, detailGeometry.size.width - 32),
                             windowWidth: geometry.size.width)
                     if let error = model.storageError ?? model.operationError {
@@ -110,7 +108,7 @@ struct MainWindow: View {
                 }
                 .inspector(isPresented: $inspectorPresented) {
                     Group {
-                        if selection == .sessions, let session = selectedSession {
+                        if selection == .usage && analysisPage == .sessions, let session = selectedSession {
                             SessionDetail(model: model, session: session)
                         } else { InspectorContent(model: model) }
                     }
@@ -136,10 +134,6 @@ struct MainWindow: View {
         }
         .frame(minWidth: 540, minHeight: 390)
         .background(WindowObserver())
-        .onAppear {
-            model.openMainWindow = { openWindow(id: "main") }
-            model.start()
-        }
         .sheet(isPresented: Binding(get: { model.hasCheckedCodexAccount && !model.welcomeCompleted }, set: { _ in })) {
             WelcomeView(model: model)
         }
@@ -150,7 +144,6 @@ struct MainWindow: View {
             SessionDetail(model: model, session: session)
                 .frame(minWidth: 390, minHeight: 430)
         }
-        .sheet(item: $manualEntry) { ManualUsageSheet(model: model, existing: $0) }
         .sheet(isPresented: $newManualSheet) { ManualUsageSheet(model: model) }
         .sheet(item: $projectEntry) { ProjectRuleSheet(model: model, project: $0) }
         .sheet(item: $priceEntry) { PriceSheet(model: model, item: $0) }
@@ -161,20 +154,26 @@ struct MainWindow: View {
     @ViewBuilder private func content(width: CGFloat, windowWidth: CGFloat) -> some View {
         switch selection ?? .overview {
         case .overview:
-            OverviewPage(model: model, width: width, compact: width < 510,
-                         showSources: { selection = .sources }, showProjects: { selection = .projects })
-        case .activity: ActivityCenterPage(model: model, width: width)
+            OverviewPage(model: model, width: width, compact: width < 510, showSources: { selection = .sources })
         case .usage:
-            UsagePage(model: model, width: width, openRecords: { recordsSheet = true })
+            analysisContent(width: width, windowWidth: windowWidth)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        Button { newManualSheet = true }
-                        label: { Label("手动补录", systemImage: "plus") }
+                        Button { newManualSheet = true } label: { Label("手动补录", systemImage: "plus") }
                     }
                     ToolbarItem(placement: .primaryAction) {
                         Button { exportSheet = true } label: { Label("导出", systemImage: "square.and.arrow.up") }
                     }
                 }
+        case .sources: SourcesPage(model: model)
+        }
+    }
+    @ViewBuilder private func analysisContent(width: CGFloat, windowWidth: CGFloat) -> some View {
+        switch analysisPage {
+        case .overview: UsagePage(model: model, width: width, openRecords: { recordsSheet = true })
+        case .activity: ActivityCenterPage(model: model, width: width)
+        case .models: ModelsPage(model: model, width: width, editPrice: { priceEntry = $0 })
+        case .projects: ProjectsPage(model: model, width: width, edit: { projectEntry = $0 })
         case .sessions:
             SessionsPage(model: model, width: width, selection: $sessionSelection, showDetail: { id in
                 guard let session = model.analytics.sessions.first(where: { $0.id == id }) else { return }
@@ -182,11 +181,6 @@ struct MainWindow: View {
                 model.loadSession(session)
                 if windowWidth >= 950 { inspectorPresented = true } else { detailSession = session }
             })
-        case .projects:
-            ProjectsPage(model: model, width: width, edit: { projectEntry = $0 })
-        case .models:
-            ModelsPage(model: model, width: width, editPrice: { priceEntry = $0 })
-        case .sources: SourcesPage(model: model)
         }
     }
     private var selectedSession: SessionSummary? {

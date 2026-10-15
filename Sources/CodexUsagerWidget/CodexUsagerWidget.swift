@@ -92,8 +92,10 @@ struct QuotaWidgetView: View {
                         if let due = quota.reset {
                             HStack(spacing: 3) {
                                 Text("重置").font(.caption2)
-                                Text(timerInterval: entry.date...max(entry.date, due), countsDown: true)
-                                    .font(.caption2).monospacedDigit()
+                                if due > entry.date {
+                                    Text(timerInterval: entry.date...due, countsDown: true)
+                                        .font(.caption2).monospacedDigit()
+                                } else { Text("等待更新").font(.caption2) }
                             }.foregroundStyle(.secondary)
                         }
                     }
@@ -101,7 +103,7 @@ struct QuotaWidgetView: View {
             }
             if let updated = entry.provider?.updatedAt {
                 Spacer(minLength: 1)
-                Text("更新于 \(updated, style: .relative)")
+                Text("更新：\(updated.formatted(.dateTime.month().day().hour().minute()))")
                     .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
             } else {
                 Spacer(minLength: 1)

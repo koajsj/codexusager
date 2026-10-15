@@ -30,10 +30,9 @@ jobs:
           set -euo pipefail
           python3 Scripts/generate_xcode_project.py
           git diff --exit-code -- CodexUsager.xcodeproj/project.pbxproj
+      - name: Static checks
+        run: python3 Scripts/check_static.py
       - name: Run unit and regression tests
-        env:
-          LIVE_PROVIDER_CHECK: '0'
-          LIVE_SESSION_CHECK: '0'
         run: swift test
       - name: Check release validation
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Scripts/tests -v

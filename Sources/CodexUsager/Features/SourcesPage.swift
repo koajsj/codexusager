@@ -4,6 +4,7 @@ import UsageCore
 struct SourcesPage: View {
     let model: AppModel
     @State private var provider: ProviderID?
+    @State private var revealedExecutablePaths: Set<ProviderID> = []
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             PageFrame {
@@ -87,6 +88,8 @@ struct SourcesPage: View {
                 }
             }
         }
+        .onChange(of: model.hidePaths) { _, _ in revealedExecutablePaths = [] }
+        .onDisappear { revealedExecutablePaths = [] }
     }
     private func sourcePanel(_ id: ProviderID) -> some View {
         let status = model.status(id)
@@ -107,7 +110,18 @@ struct SourcesPage: View {
             }
             LabeledContent("Session 数据", value: model.sourceSessionStatus(id))
             if let executable = status.executable {
-                LabeledContent("可执行文件", value: executable.path).font(.caption).textSelection(.enabled)
+                LabeledContent("可执行文件") {
+                    HStack(spacing: 6) {
+                        Text(model.hidePaths && !revealedExecutablePaths.contains(id) ? executable.lastPathComponent : executable.path)
+                            .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                        if model.hidePaths {
+                            Button(revealedExecutablePaths.contains(id) ? "隐藏路径" : "显示路径") {
+                                if revealedExecutablePaths.contains(id) { revealedExecutablePaths.remove(id) }
+                                else { revealedExecutablePaths.insert(id) }
+                            }.buttonStyle(.link)
+                        }
+                    }
+                }.font(.caption)
             }
             if let version = status.version { LabeledContent("版本", value: version) }
             if let issue = status.issue {

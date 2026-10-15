@@ -4,6 +4,7 @@ import Testing
 @testable import UsageCore
 
 @Test func indexIsIdempotentAcrossRepeatedScansAndReopen() async throws {
+    var query = UsageQuery(); query.period = .all
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -15,16 +16,28 @@ import Testing
     let databaseURL = directory.appendingPathComponent("usage.store")
     let repository = UsageRepository(modelContainer: try UsageStorage.makeContainer(url: databaseURL))
     for _ in 0..<10 { try await repository.importFile(source, provider: .claude) }
-    let first = try await repository.dashboard()
+    let first = try await repository.analytics(query: query)
     #expect(first.recordCount == 1)
-    #expect(first.totalTokens == 12)
-    #expect(first.sessions.first?.totalTokens == 12)
+    #expect(first.tokens.total == 12)
+    #expect(first.sessions.first?.tokens.total == 12)
     let reopened = UsageRepository(modelContainer: try UsageStorage.makeContainer(url: databaseURL))
     try await reopened.importFile(source, provider: .claude)
-    #expect(try await reopened.dashboard().totalTokens == 12)
+    #expect(try await reopened.analytics(query: query).tokens.total == 12)
     try Data(line.replacingOccurrences(of: "\"output_tokens\":5", with: "\"output_tokens\":9").utf8).write(to: source)
     try await reopened.importFile(source, provider: .claude)
-    #expect(try await reopened.dashboard().totalTokens == 16)
+    #expect(try await reopened.analytics(query: query).tokens.total == 16)
+    // A disappearing source is an I/O failure, not a database failure; retain indexed usage.
+    try FileManager.default.removeItem(at: source)
+    await #expect(throws: SourceFileReadError.self) {
+        try await reopened.importFile(source, provider: .claude)
+    }
+    try await reopened.recordFailure(path: source.path, provider: .claude)
+    #expect(try await reopened.sourceCenterSummaries()[.claude]?.failedFiles == 1)
+    #expect(try await reopened.analytics(query: query).tokens.total == 16)
+    try Data(line.replacingOccurrences(of: "\"output_tokens\":5", with: "\"output_tokens\":9").utf8).write(to: source)
+    try await reopened.importFile(source, provider: .claude)
+    #expect(try await reopened.sourceCenterSummaries()[.claude]?.failedFiles == 0)
+    #expect(try await reopened.analytics(query: query).tokens.total == 16)
 }
 
 @Test func cancelledScanDoesNotAdvanceCursor() throws {
@@ -52,6 +65,7 @@ import Testing
 }
 
 @Test func sameSizeSameModificationDateRewriteIsReindexed() async throws {
+    var query = UsageQuery(); query.period = .all
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -74,7 +88,7 @@ import Testing
     #expect(attrs[.modificationDate] as? Date == modified)
     #expect((attrs[.size] as? NSNumber)?.uint64Value == UInt64(line(1).count))
     #expect(try await repository.importFile(source, provider: .claude))
-    #expect(try await repository.dashboard().totalTokens == 3)
+    #expect(try await repository.analytics(query: query).tokens.total == 3)
 }
 
 @Test func accountCacheDoesNotPersistEmailIdentity() async throws {

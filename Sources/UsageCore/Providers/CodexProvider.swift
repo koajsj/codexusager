@@ -2,7 +2,6 @@ import Foundation
 
 public actor CodexProvider: UsageProvider {
     public nonisolated let id = ProviderID.codex
-    public nonisolated let capabilities: ProviderCapability = [.quota, .tokenUsage, .session, .modelUsage]
     public nonisolated let events: AsyncStream<ProviderEvent>
     private let continuation: AsyncStream<ProviderEvent>.Continuation
     private let client = JSONRPCProcess()

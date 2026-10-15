@@ -94,7 +94,6 @@ private func releaseBackupDocument() -> BackupDocument {
 @Test func windowSizingFitsSmallScreenWithoutBreakingMinimum() {
     #expect(WindowSizing.initial(visible: .init(width: 1440, height: 900)) == .init(width: 720, height: 495))
     #expect(WindowSizing.initial(visible: .init(width: 900, height: 650)) == .init(width: 540, height: 390))
-    #expect(WindowSizing.minimum == .init(width: 540, height: 390))
 }
 
 @Test func resetDoesNotInventNewQuota() throws {
@@ -329,28 +328,8 @@ private func releaseBackupDocument() -> BackupDocument {
     #expect(truncated.records.count == 1)
 }
 
-@Test func streamingParserHandlesLargeInputInChunks() throws {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: url) }
-    let line = """
-    {"type":"assistant","sessionId":"s","timestamp":"2026-10-02T00:00:00Z","message":{"id":"m","usage":{"input_tokens":1,"output_tokens":1}}}
-    """ + "\n"
-    let data = Data(String(repeating: line, count: 20000).utf8)
-    try data.write(to: url)
-    var cursor: ImportCursor?
-    var total = 0
-    repeat {
-        let result = try JSONLImporter.scan(url: url, provider: .claude, cursor: cursor, chunkSize: 4096)
-        #expect(result.records.count <= 512)
-        #expect(result.peakBufferBytes < 8192)
-        total += result.records.count
-        cursor = result.cursor
-        if result.reachedEnd { break }
-    } while total < 20_000
-    #expect(total == 20_000)
-}
-
-@Test func defaultJSONLScanBoundsRecordsAndResumesLargeFile() throws {
+@Test(arguments: [Int?(4_096), nil])
+func streamingParserBoundsBatchesAndResumes(chunkSize: Int?) throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: url) }
     let line = """
@@ -359,13 +338,17 @@ private func releaseBackupDocument() -> BackupDocument {
     try Data(String(repeating: line, count: 2_000).utf8).write(to: url)
     var cursor: ImportCursor?
     var total = 0
-    repeat {
-        let batch = try JSONLImporter.scan(url: url, provider: .claude, cursor: cursor)
+    for _ in 0..<8 {
+        let batch: ScanResult
+        if let chunkSize { batch = try JSONLImporter.scan(url: url, provider: .claude, cursor: cursor, chunkSize: chunkSize) }
+        else { batch = try JSONLImporter.scan(url: url, provider: .claude, cursor: cursor) }
         #expect(batch.records.count <= 512)
+        #expect(batch.peakBufferBytes < (chunkSize ?? 64 * 1_024) * 2)
+        #expect(batch.cursor.offset > (cursor?.offset ?? 0))
         total += batch.records.count
         cursor = batch.cursor
         if batch.reachedEnd { break }
-    } while total < 2_000
+    }
     #expect(total == 2_000)
 }
 

@@ -69,8 +69,12 @@ import UsageCore
             } catch { self.error = "登出失败。请检查 Codex CLI 和 Keychain 权限后重试。"; message = nil }
         }
     }
-    func shutdown() {
-        task?.cancel(); feedback.stop()
-        Task { await service.shutdown() }
+    func shutdown() async {
+        generation = UUID()
+        let pending = task
+        pending?.cancel(); feedback.stop()
+        await service.shutdown()
+        await pending?.value
+        task = nil; isWorking = false
     }
 }

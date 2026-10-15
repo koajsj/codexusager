@@ -15,6 +15,7 @@ import UsageCore
     var activityError: String?
     var activityQuery: UsageQuery?
     var activityAsOf: Date?
+    private(set) var activityNeedsRefresh = true
     private var activityCursor: ActivityCursor?
     var liveActivities: [CodexActivity] = []
     private var activityTask: Task<Void, Never>?
@@ -33,10 +34,14 @@ import UsageCore
     }
     func loadActivity(reset: Bool, query: UsageQuery,
                       fetch: @escaping @Sendable (ActivityCursor?) async throws -> ActivityPage) {
-        if !reset, activityLoading || activityQuery != query { return }
-        activityTask?.cancel(); let generation = UUID(); activityGeneration = generation
-        if reset { activityError = nil }
-        guard reset || activityEntries.count < 10_000 else { activityHasMore = false; return }
+        if reset {
+            invalidateActivity()
+            activityError = nil
+        } else {
+            guard !activityLoading, !activityNeedsRefresh, activityHasMore,
+                  activityCursor != nil, activityQuery == query, activityEntries.count < 10_000 else { return }
+        }
+        let generation = UUID(); activityGeneration = generation
         let cursor = reset ? nil : activityCursor
         activityLoading = true
         activityTask = Task { [weak self] in
@@ -49,20 +54,28 @@ import UsageCore
                 if reset { activityEntries = page.entries } else { activityEntries += page.entries }
                 activityCursor = page.nextCursor
                 activityHasMore = page.hasMore && activityEntries.count < 10_000
+                activityNeedsRefresh = false
                 activityQuery = query; activityAsOf = page.asOf
                 activityError = nil
             } catch is CancellationError { }
             catch {
-                guard activityGeneration == generation else { return }
-                if case ActivityReadError.dataChanged = error {
+                guard !Task.isCancelled, activityGeneration == generation else { return }
+                activityCursor = nil; activityHasMore = false; activityNeedsRefresh = true
+                if error is ActivityReadError {
                     activityError = "本地数据已更新，请刷新列表后继续浏览。"
-                    activityHasMore = false
                 } else { activityError = "调用记录读取失败，请刷新重试；已有结果予以保留。" }
             }
         }
     }
-    func shutdown() {
+    /// Keep the last successful rows visible, but never append using an invalidated cursor.
+    func invalidateActivity() {
         activityGeneration = UUID()
         activityTask?.cancel(); activityTask = nil; activityLoading = false
+        activityCursor = nil; activityHasMore = false; activityNeedsRefresh = true
+    }
+    func shutdown() async {
+        let pending = activityTask
+        invalidateActivity()
+        await pending?.value
     }
 }

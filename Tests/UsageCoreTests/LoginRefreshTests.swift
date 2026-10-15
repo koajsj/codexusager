@@ -79,10 +79,17 @@ import Testing
         welcomeCompleted: true)
     let legacy = try JSONEncoder().encode(settings)
     #expect(try JSONDecoder().decode(BackupSettings.self, from: legacy).refreshPolicy == nil)
+    #expect(try JSONDecoder().decode(BackupSettings.self, from: legacy).menuQuotaSelections == nil)
+    settings.menuQuotaSelections = [.init(provider: .codex, windowID: "codex:primary")]
+    #expect(try JSONDecoder().decode(BackupSettings.self, from: JSONEncoder().encode(settings)).menuQuotaSelections == settings.menuQuotaSelections)
     settings.refreshPolicy = "hourly"
     var document = BackupDocument(settings: settings, projectRules: [], adjustments: [], manualUsage: [], quotaHistory: [], modelPrices: [])
     try BackupValidation.validate(document)
     try BackupValidation.validateShape(JSONEncoder().encode(document))
+    document.settings.menuQuotaSelections = Array(repeating: .init(provider: .codex, windowID: "codex:primary"), count: 3)
+    #expect(throws: BackupError.self) { try BackupValidation.validate(document) }
+    #expect(throws: BackupError.self) { try BackupValidation.validateShape(JSONEncoder().encode(document)) }
+    document.settings.menuQuotaSelections = nil
     document.settings.refreshPolicy = "invalid"
     #expect(throws: BackupError.self) { try BackupValidation.validate(document) }
 }

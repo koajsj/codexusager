@@ -14,7 +14,10 @@ import UsageCore
     private let settings: @MainActor () -> BackupSettings
     private let applySettings: @MainActor (BackupSettings) -> Void
     private let didRestore: @MainActor () -> Void
+    private var isShuttingDown = false
     private var operationTask: Task<Void, Never>?
+    private var operationWritesData = false
+    @ObservationIgnored private var filePanel: NSSavePanel?
 
     init(service: BackupService, settings: @escaping @MainActor () -> BackupSettings,
          applySettings: @escaping @MainActor (BackupSettings) -> Void,
@@ -23,9 +26,10 @@ import UsageCore
         self.applySettings = applySettings; self.didRestore = didRestore
     }
     func exportBackup() {
-        guard !isWorking, preview == nil else { return }
+        guard !isShuttingDown, !isWorking, preview == nil else { return }
         isWorking = true; error = nil; message = nil
         let panel = NSSavePanel()
+        filePanel = panel
         panel.allowedContentTypes = [.json]; panel.canCreateDirectories = true
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = AnalyticsTimeContext().calendar
@@ -34,10 +38,13 @@ import UsageCore
         panel.nameFieldStringValue = "CodexUsager-backup-\(formatter.string(from: .now)).json"
         panel.begin { [weak self] response in
             guard let self else { return }
+            self.filePanel = nil
+            guard !self.isShuttingDown else { self.isWorking = false; return }
             guard response == .OK, let url = panel.url else { self.isWorking = false; return }
             let preferences = self.settings()
+            self.operationWritesData = true
             self.operationTask = Task {
-                defer { self.isWorking = false; self.operationTask = nil }
+                defer { self.isWorking = false; self.operationTask = nil; self.operationWritesData = false }
                 do {
                     try await self.service.export(to: url, settings: preferences)
                     self.message = "备份已保存：\(url.lastPathComponent)"
@@ -47,18 +54,27 @@ import UsageCore
         }
     }
     func chooseBackup() {
-        guard !isWorking, preview == nil else { return }
+        guard !isShuttingDown, !isWorking, preview == nil else { return }
         isWorking = true; error = nil; message = nil
         let panel = NSOpenPanel()
+        filePanel = panel
         panel.allowedContentTypes = [.json]; panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.begin { [weak self] response in
             guard let self else { return }
+            self.filePanel = nil
+            guard !self.isShuttingDown else { self.isWorking = false; return }
             guard response == .OK, let url = panel.url else { self.isWorking = false; return }
+            self.operationWritesData = false
             self.operationTask = Task {
-                defer { self.isWorking = false; self.operationTask = nil }
+                defer { self.isWorking = false; self.operationTask = nil; self.operationWritesData = false }
                 do {
-                    self.preview = try await self.service.preview(from: url)
+                    let value = try await self.service.preview(from: url)
+                    if Task.isCancelled {
+                        await self.service.discard(value.id)
+                        throw CancellationError()
+                    }
+                    self.preview = value
                     self.restoreSettings = false
                 } catch is CancellationError { }
                 catch { self.error = self.message(for: error, restoring: true) }
@@ -66,11 +82,12 @@ import UsageCore
         }
     }
     func confirmRestore(_ value: BackupPreview) {
-        guard !isWorking, preview?.id == value.id else { return }
+        guard !isShuttingDown, !isWorking, preview == nil || preview?.id == value.id else { return }
         let includeSettings = restoreSettings
         isWorking = true; isRestoring = true; error = nil
+        operationWritesData = true
         operationTask = Task {
-            defer { isWorking = false; isRestoring = false; operationTask = nil }
+            defer { isWorking = false; isRestoring = false; operationTask = nil; operationWritesData = false }
             do {
                 let result = try await service.restore(value.id)
                 if includeSettings { applySettings(result.settings) }
@@ -84,9 +101,12 @@ import UsageCore
         }
     }
     func cancelPreview(_ value: BackupPreview) {
-        guard !isRestoring else { return }
-        if preview?.id == value.id { preview = nil }
-        Task { await service.discard(value.id) }
+        guard !isShuttingDown, !isWorking, preview?.id == value.id else { return }
+        preview = nil; isWorking = true; operationWritesData = false
+        operationTask = Task {
+            defer { isWorking = false; operationTask = nil }
+            await service.discard(value.id)
+        }
     }
     private func message(for error: Error, restoring: Bool) -> String {
         if let backupError = error as? BackupError { return backupError.localizedDescription }
@@ -94,5 +114,18 @@ import UsageCore
         return restoring ? "备份读取或恢复失败。请检查文件格式、访问权限和磁盘空间后重试；当前记录未被覆盖。" :
             "备份保存失败。请检查本地数据、目标文件夹权限和磁盘空间后重试。"
     }
-    func shutdown() { operationTask?.cancel() }
+    func prepareForShutdown() {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
+        filePanel?.cancel(nil); filePanel = nil
+        // Confirmed writes finish through settings application; only preview reads can be cancelled.
+        if !operationWritesData { operationTask?.cancel() }
+    }
+    func shutdown() async {
+        prepareForShutdown()
+        let pending = operationTask
+        await pending?.value
+        if let preview { await service.discard(preview.id) }
+        preview = nil
+    }
 }

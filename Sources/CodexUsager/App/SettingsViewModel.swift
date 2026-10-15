@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import UsageCore
 
@@ -14,6 +15,16 @@ import UsageCore
     }
     var menuValue = MenuValue(rawValue: AppPreferencesService.shared.string(.menuValue, fallback: "remaining")) ?? .remaining {
         didSet { preferences.set(menuValue.rawValue, for: .menuValue) }
+    }
+    var menuQuotaSelections: [MenuQuotaSelection] = {
+        let data = Data(AppPreferencesService.shared.string(.menuQuotaSelections, fallback: "[]").utf8)
+        return Array(((try? JSONDecoder().decode([MenuQuotaSelection].self, from: data)) ?? []).prefix(2))
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(menuQuotaSelections), let text = String(data: data, encoding: .utf8) {
+                preferences.set(text, for: .menuQuotaSelections)
+            }
+        }
     }
     var refreshPolicy = RefreshPolicy(rawValue: AppPreferencesService.shared.string(.refreshPolicy,
         fallback: AppPreferencesService.shared.bool(.refreshAutomatically, fallback: true) ? "smart" : "manual")) ?? .smart {
@@ -46,6 +57,6 @@ import UsageCore
         BackupSettings(appearance: appearance, menuSource: menuSource.rawValue, menuStyle: menuStyle.rawValue,
             menuValue: menuValue.rawValue, refreshAutomatically: refreshAutomatically, hidePaths: hidePaths,
             notifyCodex25: notifyCodex25, notifyCodex10: notifyCodex10, notifyCodexReset: notifyCodexReset,
-            notifyClaude25: notifyClaude25, welcomeCompleted: welcomeCompleted, refreshPolicy: refreshPolicy.rawValue)
+            notifyClaude25: notifyClaude25, welcomeCompleted: welcomeCompleted, refreshPolicy: refreshPolicy.rawValue, menuQuotaSelections: menuQuotaSelections.isEmpty ? nil : menuQuotaSelections)
     }
 }

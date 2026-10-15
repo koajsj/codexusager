@@ -156,6 +156,7 @@ private func codexFallback(model: String = "model-a", reasoning: Int = 1, total:
 }
 
 @Test func decoderRevisionReindexesCollisionsAndPreservesMatchingAdjustment() async throws {
+    var query = UsageQuery(); query.period = .all
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -176,8 +177,8 @@ private func codexFallback(model: String = "model-a", reasoning: Int = 1, total:
     try context.save()
     let repository = UsageRepository(modelContainer: container)
     #expect(try await repository.importFile(file, provider: .codex))
-    #expect(try await repository.dashboard().recordCount == 2)
-    #expect(try await repository.dashboard().totalTokens == 26)
+    #expect(try await repository.analytics(query: query).recordCount == 2)
+    #expect(try await repository.analytics(query: query).tokens.total == 26)
     let raw = try ModelContext(container).fetch(FetchDescriptor<StoredUsage>()).map { try JSONDecoder().decode(UsageRecord.self, from: $0.payload) }
     #expect(raw.map(\.totalTokens).reduce(0, +) == 24)
     #expect(try await !repository.importFile(file, provider: .codex))

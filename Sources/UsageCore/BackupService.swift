@@ -1,5 +1,14 @@
 import Foundation
 
+/// A stable selection of a real provider window, independent of array order or plan.
+public struct MenuQuotaSelection: Codable, Sendable, Hashable {
+    public var provider: ProviderID
+    public var windowID: String
+    public init(provider: ProviderID, windowID: String) {
+        self.provider = provider; self.windowID = windowID
+    }
+}
+
 /// An explicit preference allowlist. Never serialize an entire UserDefaults domain.
 public struct BackupSettings: Codable, Sendable {
     public var appearance: String
@@ -13,15 +22,17 @@ public struct BackupSettings: Codable, Sendable {
     public var notifyCodexReset: Bool
     public var notifyClaude25: Bool
     public var refreshPolicy: String?
+    public var menuQuotaSelections: [MenuQuotaSelection]?
     public var welcomeCompleted: Bool
     public init(appearance: String, menuSource: String, menuStyle: String, menuValue: String,
                 refreshAutomatically: Bool, hidePaths: Bool, notifyCodex25: Bool, notifyCodex10: Bool,
-                notifyCodexReset: Bool, notifyClaude25: Bool, welcomeCompleted: Bool, refreshPolicy: String? = nil) {
+                notifyCodexReset: Bool, notifyClaude25: Bool, welcomeCompleted: Bool, refreshPolicy: String? = nil, menuQuotaSelections: [MenuQuotaSelection]? = nil) {
         self.appearance = appearance; self.menuSource = menuSource; self.menuStyle = menuStyle
         self.menuValue = menuValue; self.refreshAutomatically = refreshAutomatically; self.hidePaths = hidePaths
         self.notifyCodex25 = notifyCodex25; self.notifyCodex10 = notifyCodex10
         self.notifyCodexReset = notifyCodexReset; self.notifyClaude25 = notifyClaude25
         self.refreshPolicy = refreshPolicy
+        self.menuQuotaSelections = menuQuotaSelections
         self.welcomeCompleted = welcomeCompleted
     }
 }
@@ -98,7 +109,11 @@ enum BackupValidation {
         }
         try keys(root, allowed: ["format", "version", "schemaVersion", "appVersion", "createdAt", "settings", "projectRules", "adjustments", "manualUsage", "quotaHistory", "modelPrices"])
         guard let settings = root["settings"] as? [String: Any] else { throw BackupError.invalidFormat }
-        try keys(settings, allowed: ["appearance", "menuSource", "menuStyle", "menuValue", "refreshAutomatically", "hidePaths", "notifyCodex25", "notifyCodex10", "notifyCodexReset", "notifyClaude25", "welcomeCompleted", "refreshPolicy"])
+        try keys(settings, allowed: ["appearance", "menuSource", "menuStyle", "menuValue", "refreshAutomatically", "hidePaths", "notifyCodex25", "notifyCodex10", "notifyCodexReset", "notifyClaude25", "welcomeCompleted", "refreshPolicy", "menuQuotaSelections"])
+        if let selections = settings["menuQuotaSelections"], !(selections is NSNull) {
+            guard let rows = selections as? [[String: Any]], rows.count <= 2 else { throw BackupError.invalidFormat }
+            for row in rows { try keys(row, allowed: ["provider", "windowID"]) }
+        }
         for (name, allowed, tokens) in [
             ("projectRules", Set(["path", "displayName", "mergedInto", "ignored"]), [String]()),
             ("adjustments", Set(["id", "recordID", "original", "replacement", "reason", "note", "updatedAt", "provider"]), ["original", "replacement"]),
@@ -128,6 +143,12 @@ enum BackupValidation {
               ["codex", "claude", "automatic"].contains(settings.menuSource),
               ["dualQuota", "quotaCountdown", "minimal", "icon"].contains(settings.menuStyle),
               ["remaining", "used"].contains(settings.menuValue), validDate(document.createdAt) else { throw BackupError.invalidValues }
+        if let selections = settings.menuQuotaSelections {
+            guard selections.count <= 2, Set(selections).count == selections.count,
+                  selections.allSatisfy({ text($0.windowID, limit: 512, required: true) }) else {
+                throw BackupError.invalidValues
+            }
+        }
         guard settings.refreshPolicy.map({ RefreshPolicy(rawValue: $0) != nil }) ?? true else { throw BackupError.invalidValues }
         let counts = [document.projectRules.count, document.adjustments.count, document.manualUsage.count,
                       document.quotaHistory.count, document.modelPrices.count]

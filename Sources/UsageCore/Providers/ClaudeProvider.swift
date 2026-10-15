@@ -16,7 +16,6 @@ private struct ClaudeAuthResponse: Decodable {
 
 public actor ClaudeProvider: UsageProvider {
     public nonisolated let id = ProviderID.claude
-    public nonisolated let capabilities: ProviderCapability = [.quota, .tokenUsage, .session, .modelUsage]
     public nonisolated let events: AsyncStream<ProviderEvent> = AsyncStream { $0.finish() }
     private var lastSuccessful: QuotaSnapshot?
     private var lastAccount: AccountProfile?

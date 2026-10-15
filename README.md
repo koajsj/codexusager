@@ -5,13 +5,14 @@ CodexUsager 是 macOS Tahoe 原生 AI Coding Analytics Dashboard。Codex App Ser
 - 当前源码目标为 macOS Tahoe **26.0+**；支持 Apple Silicon，发布构建可生成 Universal 2（arm64 + x86_64）。
 - SwiftUI + AppKit 菜单栏 + SwiftData + Swift Charts；无 Electron、Tauri、第三方 UI 框架或自建服务。
 - 简体中文为默认语言，界面使用系统色与 SF Symbols。
-- 当前工程版本为 **1.0.1**。本轮源码升级尚未发布；现有 Preview 安装包的系统要求与功能以对应 Tag 为准。签名、安装和业务运行行为需按发布清单验证。
+- 当前工程版本为 **1.0.2**，对应 `v1.0.2-preview` 发布准备。安装包的系统要求与功能以对应 Tag 为准；签名、安装和业务运行行为需按发布清单验证。
 
 ## 使用入口
 
 - 顶部菜单栏常驻显示真实额度，点击可查看 Codex / Claude、刷新、打开主窗口或设置。可选择最多两个实际额度窗口，支持极简与仅图标；关闭主窗口继续运行，退出应用才停止。
 - 主窗口分为「额度监控」「用量分析」「数据来源」；分析内保留总览、模型、项目、会话与活动。历史与速度位于额度页展开区。
 - 菜单栏空间不足、刘海遮挡及全屏自动隐藏受 macOS 控制，不能保证永久可见；可通过 Dock 返回主窗口或改为仅图标。
+- 应用菜单或「设置 → 关于」可手动检查更新，查看说明并通过浏览器下载 DMG；Preview 可选择是否参与比较。下载后退出旧版本，再替换 Applications 内的 App。
 
 ## 安装与构建
 
@@ -59,7 +60,7 @@ Scripts/package_app.sh release --universal --unsigned
 
 ## 隐私
 
-应用在本机保存用量元数据，不保存 Prompt、AI 回复、源代码或登录凭据，也没有自建云服务或遥测。默认导出会匿名化项目绝对路径。详细说明见 [PRIVACY.md](docs/PRIVACY.md)。
+应用在本机保存用量元数据，不保存 Prompt、AI 回复、源代码或登录凭据，也没有自建云服务或遥测。默认导出会匿名化项目绝对路径。手动检查更新仅访问 GitHub 公开发布信息，不发送本地统计或认证数据。详细说明见 [PRIVACY.md](docs/PRIVACY.md)。
 
 架构与数据来源说明见 [docs/architecture.md](docs/architecture.md)；发布前运行验证清单见 [RELEASE.md](docs/RELEASE.md)。
 

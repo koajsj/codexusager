@@ -9,13 +9,7 @@ struct SourcesPage: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             PageFrame {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        Text("仅索引本机统计字段，不保存对话、推理正文、代码或工具输出。")
-                            .font(.callout).foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Button("手动刷新", systemImage: "arrow.clockwise") { model.refreshData() }
-                            .disabled(model.isRefreshing || model.isImporting)
-                    }
+                    PageHeading(title: "来源与同步", subtitle: "仅索引本机统计字段，不保存对话、推理正文、代码或工具输出。")
                     if model.isRefreshing || model.isImporting {
                         HStack {
                             ProgressView().controlSize(.small)

@@ -104,6 +104,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$widget/Contents/Info.plist")" = '26.0'
           test "$(/usr/libexec/PlistBuddy -c 'Print :UsageAppGroup' "$app/Contents/Info.plist")" = "$(/usr/libexec/PlistBuddy -c 'Print :UsageAppGroup' "$widget/Contents/Info.plist")"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'dev.codexusager.app'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :UsageReleaseChannel' "$app/Contents/Info.plist")" = 'preview'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$widget/Contents/Info.plist")" = 'dev.codexusager.app.widget'
           tag_version="${TAG_NAME#v}"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${tag_version%-preview}"
@@ -132,7 +133,13 @@ jobs:
           prerelease: ${{ endsWith(github.ref_name, '-preview') }}
           generate_release_notes: true
           body: |
-            未签名 Preview，非正式签名发行版。Widget / App Group、Gatekeeper 与安装启动仍需独立验证。
+            macOS Tahoe 26.0+，Universal 2（Apple Silicon / Intel）。
+
+            本版新增应用菜单及「设置 → 关于」的手动检查更新、Preview 筛选和 DMG 下载入口，并精修额度页、统计趋势、紧凑布局及辅助功能。
+
+            下载 DMG 后打开，将 CodexUsager.app 拖入 Applications；升级前请退出旧版本。校验文件为同名 .dmg.sha256。
+
+            未签名、未公证 Preview，非正式签名发行版。Widget / App Group、Gatekeeper 与安装启动仍需独立验证。
           fail_on_unmatched_files: true
           files: |
             dist/CodexUsager-${{ github.ref_name }}.dmg

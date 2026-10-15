@@ -2,7 +2,10 @@ import Foundation
 import Observation
 import UsageCore
 
+enum SettingsTab: Hashable { case general, providers, privacy, notifications, data, about }
+
 @MainActor @Observable final class SettingsViewModel {
+    var selectedTab: SettingsTab = .general
     private let preferences = AppPreferencesService.shared
     var welcomeCompleted = AppPreferencesService.shared.bool(.welcomeCompleted) {
         didSet { preferences.set(welcomeCompleted, for: .welcomeCompleted) }

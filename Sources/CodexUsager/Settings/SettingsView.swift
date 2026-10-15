@@ -6,7 +6,7 @@ struct SettingsView: View {
     @State private var showWelcome = false
 
     var body: some View {
-        TabView {
+        TabView(selection: $model.settingsViewModel.selectedTab) {
             Form {
                 Section("显示") {
                     Picker("外观", selection: $model.appearance) {
@@ -66,6 +66,7 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("通用", systemImage: "gearshape") }
+            .tag(SettingsTab.general)
 
             Form {
                 ForEach(ProviderID.allCases, id: \.self) { provider in
@@ -86,14 +87,18 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             .tabItem { Label("来源", systemImage: "externaldrive.connected.to.line.below") }
+            .tag(SettingsTab.providers)
 
             Form {
                 Toggle("导出时默认隐藏绝对路径", isOn: $model.hidePaths)
                 Text("用量数据默认保存在本机；不保存对话、代码、工具输出或凭据。")
                 Text("Widget 只读取 App Group 内经过筛选的额度快照。")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("手动检查更新仅请求 GitHub 公开发布信息，不发送用量、项目或账户信息；下载交给默认浏览器。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             .tabItem { Label("隐私", systemImage: "hand.raised") }
+            .tag(SettingsTab.privacy)
 
             Form {
                 Section("Codex") {
@@ -107,6 +112,7 @@ struct SettingsView: View {
                 if let error = model.notificationError { Text(error).foregroundStyle(.orange) }
             }
             .tabItem { Label("通知", systemImage: "bell") }
+            .tag(SettingsTab.notifications)
 
             Form {
                 LabeledContent("已索引记录", value: model.analytics.recordCount.formatted())
@@ -122,18 +128,59 @@ struct SettingsView: View {
                 if let error = model.widgetError { Text(error).foregroundStyle(.orange) }
             }
             .tabItem { Label("数据", systemImage: "externaldrive") }
+            .tag(SettingsTab.data)
 
             Form {
-                LabeledContent("应用", value: "CodexUsager")
-                LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "未知")
-                LabeledContent("系统要求", value: "macOS Tahoe 26 或更新版本")
-                Text("原生 macOS AI Coding 用量伴侣，支持 Codex 和 Claude Code。")
-                    .foregroundStyle(.secondary)
+                Section("CodexUsager") {
+                    LabeledContent("版本", value: model.updateViewModel.installedVersion ?? "未知")
+                    LabeledContent("发布渠道", value: model.updateViewModel.isPreview ? "Preview 预览版" : "正式版")
+                    LabeledContent("系统要求", value: "macOS Tahoe 26 或更新版本")
+                    Text("原生 macOS AI Coding 用量伴侣，支持 Codex 和 Claude Code。")
+                        .foregroundStyle(.secondary)
+                }
+                UpdateControls(model: model.updateViewModel)
             }
             .tabItem { Label("关于", systemImage: "info.circle") }
+            .tag(SettingsTab.about)
         }
         .formStyle(.grouped)
-        .frame(width: 570, height: 430)
+        .frame(minWidth: 570, idealWidth: 640, minHeight: 430, idealHeight: 500)
         .sheet(isPresented: $showWelcome) { WelcomeView(model: model) }
+    }
+}
+
+private struct UpdateControls: View {
+    @Bindable var model: UpdateViewModel
+    var body: some View {
+        Section("软件更新") {
+            Toggle("包含 Preview 预览版", isOn: $model.includePreviews).disabled(model.isChecking)
+            HStack(spacing: 12) {
+                Button("检查更新…") { model.check() }.disabled(model.isChecking)
+                if model.isChecking {
+                    ProgressView().controlSize(.small).accessibilityLabel("正在检查更新")
+                    Text("正在检查 GitHub 发布…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let message = model.message {
+                Label(message, systemImage: model.statusSymbol).font(.callout)
+            }
+            if let update = model.availableUpdate {
+                if update.isPreview {
+                    Label("未签名、未公证的 Preview；安装可能受 macOS 安全检查限制。", systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                DisclosureGroup("更新说明") {
+                    Text(verbatim: update.notes).font(.caption).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("下载 \(update.tag) DMG", systemImage: "arrow.down.circle") { model.download() }
+            }
+            if let error = model.error {
+                Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+            }
+            Button("查看 GitHub 发布页面") { model.openReleases() }.buttonStyle(.link)
+            Text("仅手动联网检查。下载由浏览器完成；退出应用后，用下载的版本替换 Applications 中的 App。本应用不会自动安装或移除 macOS 安全限制。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

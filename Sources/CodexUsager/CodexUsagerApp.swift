@@ -16,7 +16,13 @@ import SwiftUI
                 }
         }
         .defaultSize(width: 720, height: 500)
-        .commands { SidebarCommands() }
+        .commands {
+            SidebarCommands()
+            CommandGroup(after: .appInfo) {
+                Button("检查更新…") { model.checkForUpdates() }
+                    .disabled(model.updateViewModel.isChecking)
+            }
+        }
 
         Settings {
             SettingsView(model: model)

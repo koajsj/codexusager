@@ -15,12 +15,18 @@ struct UsagePage: View {
     }
     var body: some View {
         PageFrame {
-            VStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 16) {
                 UsageHomeSummary(model: model)
                 Divider()
+                PageHeading(title: "统计分析", subtitle: "下方图表与排行按所选时间及来源汇总")
                 AnalyticsFilters(model: model)
                 HStack {
-                    if model.isAggregating { ProgressView().controlSize(.small) }
+                    if model.isAggregating {
+                        ProgressView().controlSize(.small)
+                        Text("正在更新统计…").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("\(model.analytics.recordCount.formatted()) 条记录").font(.caption).foregroundStyle(.secondary)
+                    }
                     Spacer(); Button("人工修正 / 手动记录", action: openRecords).buttonStyle(.link)
                 }
                 if model.analytics.recordCount == 0 { EmptyStatistics(model: model) }

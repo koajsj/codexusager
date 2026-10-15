@@ -10,7 +10,8 @@ struct OverviewPage: View {
     var body: some View {
         PageFrame {
             VStack(alignment: .leading, spacing: 14) {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 220), alignment: .top), count: !compact && width >= 510 ? 2 : 1), alignment: .leading, spacing: 12) {
+                PageHeading(title: "当前额度", subtitle: "Codex 与 Claude · 按来源提供的真实窗口显示")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 210), alignment: .top), count: !compact && width >= 460 ? 2 : 1), alignment: .leading, spacing: 12) {
                     ProviderPanel(status: model.codexStatus, quota: model.codexQuota, model: model, action: showSources)
                     ProviderPanel(status: model.claudeStatus, quota: model.claudeQuota, model: model, action: showSources)
                 }
@@ -19,7 +20,10 @@ struct OverviewPage: View {
                 }
                 Divider()
                 HStack {
-                    StatusBadge(health: model.overallHealth)
+                    if model.isRefreshing {
+                        ProgressView().controlSize(.small)
+                        Text("正在同步额度…").font(.caption).foregroundStyle(.secondary)
+                    } else { StatusBadge(health: model.overallHealth) }
                     Spacer()
                     Button("查看数据来源", action: showSources).buttonStyle(.link)
                 }
@@ -46,6 +50,10 @@ struct UsageHomeSummary: View {
                 Spacer(minLength: 8)
                 if model.isImporting { ProgressView().controlSize(.small) }
             }
+            if !model.hasIndexed {
+                Label(model.isImporting ? "正在增量索引，已有用量不会被清除。" : "刷新本地会话后显示今日用量与趋势。", systemImage: "externaldrive")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if model.hasIndexed {
                 TrendChart(points: model.analytics.past24Hours, hourly: true)
                     .accessibilityLabel("全部来源过去 24 小时 Token 趋势")
@@ -63,16 +71,22 @@ struct UsageHomeSummary: View {
             Divider()
             Text("最近调用 · 全部来源").font(.headline)
             ForEach(model.analytics.homeRecentCalls) { entry in
-                HStack(spacing: 10) {
-                    Text(entry.timestamp, format: .dateTime.month().day().hour().minute())
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(entry.provider.title) · \(entry.projectName)").lineLimit(1)
+                        Text(entry.timestamp, format: .dateTime.hour().minute()).font(.caption.monospacedDigit())
+                        Text(entry.timestamp, format: .dateTime.month().day()).font(.caption2)
+                    }
+                        .foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 44, alignment: .leading)
+                        .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(entry.provider.title) · \(entry.projectName)").lineLimit(1).truncationMode(.middle)
+                            .help(entry.projectName)
                         Text(entry.isManual ? "手动记录" : entry.model ?? "模型未提供").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 4)
-                    TokenNumber(value: entry.final.total, compact: true).font(.caption)
-                }
+                    TokenNumber(value: entry.final.total, compact: true).font(.callout.weight(.medium))
+                }.padding(.vertical, 3).accessibilityElement(children: .combine)
             }
             if model.analytics.homeRecentCalls.isEmpty {
                 Text(model.isImporting ? "正在索引本地会话…" : "暂无调用记录").font(.caption).foregroundStyle(.secondary)
@@ -123,11 +137,15 @@ struct ProviderPanel: View {
         DashboardGroup {
             Button(action: action) {
                 HStack {
-                    Text("\(status.id.title) · \(status.account?.localizedPlan ?? String(localized: "未知套餐"))")
-                        .font(.headline).foregroundStyle(.primary).lineLimit(2)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(status.id.title).font(.headline).foregroundStyle(.primary)
+                        Text(status.account?.localizedPlan ?? String(localized: "未知套餐"))
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     Spacer(minLength: 4); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                 }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }.buttonStyle(.plain).help("查看 \(status.id.title) 数据来源")
+                .accessibilityLabel("\(status.id.title)，\(status.account?.localizedPlan ?? "未知套餐")，查看数据来源")
             StatusBadge(health: status.health)
             if let updated = quota.snapshot?.fetchedAt {
                 Text("更新于 \(updated.formatted(date: .abbreviated, time: .shortened))")
@@ -135,10 +153,9 @@ struct ProviderPanel: View {
             }
             Divider()
             if let windows = quota.snapshot?.windows, !windows.isEmpty {
-                ForEach(windows.indices, id: \.self) { index in
-                    let window = windows[index]
+                ForEach(windows) { window in
                     QuotaRow(window: window, isStale: quota.isStale)
-                    if index < windows.count - 1 { Divider().padding(.vertical, 2) }
+                    if window.id != windows.last?.id { Divider().padding(.vertical, 2) }
                 }
                 if quota.isStale {
                     Label("最后已知额度 · 数据已过期", systemImage: "clock").font(.caption2).foregroundStyle(.orange)

@@ -238,24 +238,33 @@ struct QuotaRow: View {
     let isStale: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        TimelineView(.periodic(from: .now, by: 60)) { context in content(at: context.date) }
+    }
+    private func content(at now: Date) -> some View {
+        let stale = isStale || window.isAwaitingRefresh(at: now) ||
+            now.timeIntervalSince(window.fetchedAt) > QuotaFreshness.maximumAge
+        let tint: Color = stale ? .secondary : window.remainingPercent < 20 ? .orange : .accentColor
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(window.localizedName).font(.subheadline).lineLimit(1)
-                Spacer()
+                Text(window.localizedName).font(.subheadline).lineLimit(1).help(window.localizedName)
+                Spacer(minLength: 6)
                 Text(window.isOverLimit ? "\(window.usedPercent.formatted(.number.precision(.fractionLength(0))))% 已用" : "\(window.remainingPercent.formatted(.number.precision(.fractionLength(0))))%")
-                    .font(.system(.headline, design: .rounded)).monospacedDigit()
+                    .font(.title3.weight(.semibold)).monospacedDigit()
                     .contentTransition(reduceMotion ? .identity : .numericText())
+                    .foregroundStyle(stale ? Color.secondary : Color.primary)
             }
-            if window.isOverLimit {
-                Text("已超出限额").font(.caption).foregroundStyle(.orange)
+            if stale || window.isOverLimit {
+                Text(stale ? "上次已知额度 · 等待刷新" : "已超出限额").font(.caption2).foregroundStyle(tint)
             }
             ProgressView(value: window.remainingPercent, total: 100)
-                .tint(.blue)
+                .tint(tint)
+                .accessibilityLabel("\(window.localizedName)剩余额度")
+                .accessibilityValue("\(window.remainingPercent.formatted(.number.precision(.fractionLength(0))))%\(stale ? "，上次已知值" : "")")
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: window.remainingPercent)
             HStack {
                 Text("重置")
                 Spacer()
-                ResetCountdown(resetsAt: window.resetsAt, isStale: isStale)
+                ResetCountdown(resetsAt: window.resetsAt, isStale: stale)
             }.font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -270,7 +279,7 @@ struct ResetCountdown: View {
                 let remaining = resetsAt.timeIntervalSince(context.date)
                 let seconds = Int(max(0, min(31_536_000, ceil(remaining))))
                 if remaining > 31_536_000 { Text(resetsAt, format: .dateTime.year().month().day()) }
-                else if seconds == 0 { Text("正在更新").monospacedDigit() }
+                else if seconds == 0 { Text("等待更新").monospacedDigit() }
                 else {
                     Text(String(format: "%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60))
                         .monospacedDigit()

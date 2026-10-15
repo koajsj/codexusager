@@ -82,6 +82,12 @@
 			"path" = "Sources/CodexUsager/App/SettingsViewModel.swift";
 			"sourceTree" = "<group>";
 		};
+		4360A3C489BB69F69E347B5B = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/App/UpdateViewModel.swift";
+			"sourceTree" = "<group>";
+		};
 		B381D1CF8BBA94EE599D9E4E = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -285,6 +291,7 @@
 				7ECB4BF926F11EF9E0B2179B,
 				902575D1CE513FAF8CB10E65,
 				4A3E211453A2D688CB8F6220,
+				4360A3C489BB69F69E347B5B,
 				B381D1CF8BBA94EE599D9E4E,
 				F88E9FEAAE745027DEDCC544,
 				CDC05E9F7042E44E9C969312,
@@ -366,6 +373,10 @@
 		B05B8A641F9FA92EF6DA44F5 = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = 4A3E211453A2D688CB8F6220;
+		};
+		8B249FB7FED012FC9526A2B7 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = 4360A3C489BB69F69E347B5B;
 		};
 		6074D96D7397C92607175A26 = {
 			"isa" = "PBXBuildFile";
@@ -452,6 +463,7 @@
 				B7C15AABC939A6F8B1244792,
 				260995A3B3180880CF7D58CB,
 				B05B8A641F9FA92EF6DA44F5,
+				8B249FB7FED012FC9526A2B7,
 				6074D96D7397C92607175A26,
 				F7A61A0CD3F86257E83A6D07,
 				7718931512F462B5B8B0C50F,
@@ -608,12 +620,13 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app";
+				"USAGE_RELEASE_CHANNEL" = "preview";
 				"PRODUCT_NAME" = "CodexUsager";
 				"INFOPLIST_FILE" = "Config/AppInfo.plist";
 				"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
@@ -629,12 +642,13 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "dev.codexusager.app";
+				"USAGE_RELEASE_CHANNEL" = "preview";
 				"PRODUCT_NAME" = "CodexUsager";
 				"INFOPLIST_FILE" = "Config/AppInfo.plist";
 				"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
@@ -659,8 +673,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
@@ -681,8 +695,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
@@ -712,8 +726,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";
@@ -731,8 +745,8 @@
 				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"MARKETING_VERSION" = "1.0.1";
-				"CURRENT_PROJECT_VERSION" = "3";
+				"MARKETING_VERSION" = "1.0.2";
+				"CURRENT_PROJECT_VERSION" = "4";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"CODE_SIGN_STYLE" = "Automatic";
 				"USAGE_APP_GROUP" = "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared";

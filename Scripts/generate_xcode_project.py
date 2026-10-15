@@ -127,14 +127,15 @@ common = {
     "MACOSX_DEPLOYMENT_TARGET": "26.0",
     "SWIFT_VERSION": "6.0",
     "SWIFT_STRICT_CONCURRENCY": "complete",
-    "MARKETING_VERSION": "1.0.1",
-    "CURRENT_PROJECT_VERSION": "3",
+    "MARKETING_VERSION": "1.0.2",
+    "CURRENT_PROJECT_VERSION": "4",
     "ENABLE_HARDENED_RUNTIME": "YES",
     "CODE_SIGN_STYLE": "Automatic",
     "USAGE_APP_GROUP": "group.$(DEVELOPMENT_TEAM).dev.codexusager.shared",
 }
 app_settings = {
     **common, "PRODUCT_BUNDLE_IDENTIFIER": "dev.codexusager.app",
+    "USAGE_RELEASE_CHANNEL": "preview",
     "PRODUCT_NAME": "CodexUsager", "INFOPLIST_FILE": "Config/AppInfo.plist",
     "CODE_SIGN_ENTITLEMENTS": "Config/App.entitlements",
     "GENERATE_INFOPLIST_FILE": "NO",

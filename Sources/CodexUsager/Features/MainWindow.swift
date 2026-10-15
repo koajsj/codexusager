@@ -93,7 +93,7 @@ struct MainWindow: View {
                                 ProgressView().controlSize(.small)
                             } else { Image(systemName: "arrow.clockwise") }
                         }
-                        .help("刷新数据")
+                        .help("刷新数据").accessibilityLabel("刷新额度与本地用量")
                         .keyboardShortcut("r", modifiers: .command)
                         .disabled(model.isRefreshing || model.isImporting)
                     }
@@ -102,7 +102,7 @@ struct MainWindow: View {
                             Button { inspectorPresented.toggle() } label: {
                                 Image(systemName: "sidebar.right")
                             }
-                            .help("显示详情")
+                            .help("显示详情").accessibilityLabel(inspectorPresented ? "隐藏详情" : "显示详情")
                         }
                     }
                 }
@@ -154,7 +154,7 @@ struct MainWindow: View {
     @ViewBuilder private func content(width: CGFloat, windowWidth: CGFloat) -> some View {
         switch selection ?? .overview {
         case .overview:
-            OverviewPage(model: model, width: width, compact: width < 510, showSources: { selection = .sources })
+            OverviewPage(model: model, width: width, compact: width < 460, showSources: { selection = .sources })
         case .usage:
             analysisContent(width: width, windowWidth: windowWidth)
                 .toolbar {

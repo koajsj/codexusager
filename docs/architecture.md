@@ -92,3 +92,11 @@ ViewModel 统一防抖并检查 generation / cancellation，成功后才替换�
 文件属性、前缀检查与 JSONL 读取在存储入口转换成来源 I/O 错误；DataRefreshService 继续索引其他来源文件并记录失败。游标解码或数据库失败向上报告 LocalScanError.storageUnavailable，不伪装成文件读取失败；健康记录保存失败回滚。两类错误均不推进成功扫描时间。
 
 菜单栏文字宽度缓存只依赖显示行和实际高度，变化后重新测量；高亮与系统外观变化仍更新原生颜色。数据来源页的可执行文件路径遵守 hidePaths，临时展开状态在离页或隐私偏好变化时清除，不进入设置或备份。本节实现仅完成静态核对，运行行为需后续验证。
+
+## 手动更新检查
+
+应用菜单 / Settings → AppModel → UpdateViewModel → AppUpdateService → GitHub 公开 Releases API。仅用户点击时联网，单次检查互斥、退出时取消；设置页展示结果，不直接请求网络。AppUpdateService 以临时 URLSession 流式读取并限制 2 MiB / 30 秒，不使用 Cookie、凭据存储或磁盘缓存。数据模型为 Sendable 值类型，不修改 SwiftData Schema、用量或备份格式。
+
+比较最近 100 条发布中的 `vMAJOR.MINOR.PATCH[-preview]`，数字按整数比较，同版本正式版高于 Preview；忽略草稿、未知标签与不一致渠道。只有本仓库、同 Tag、固定文件名且上传完成的 DMG 可作为下载入口；新版本缺少附件时明确提示，不报告已是最新版。说明仅按有界纯文本展示，下载交给浏览器，安装由用户完成。Preview 构建通过 `USAGE_RELEASE_CHANNEL` 写入 Info.plist，日后正式签名版本需改为 `stable`；渠道筛选仅为本次应用会话的 UI 状态。
+
+前端复用 PageHeading、QuotaRow、TrendChart 与原生 Form；额度行按到期与 freshness 显示上次已知值，图表选中点在构建 marks 前只计算一次，长分析页使用 LazyVStack。没有新增轮询、视觉特效或第三方依赖；实际渲染性能与布局需后续运行验证。

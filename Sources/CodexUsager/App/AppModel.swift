@@ -34,6 +34,7 @@ private actor WidgetSnapshotPublisher {
     let analyticsViewModel = AnalyticsViewModel()
     let refreshViewModel = RefreshViewModel()
     let settingsViewModel = SettingsViewModel()
+    let updateViewModel = UpdateViewModel()
     let errorCenter = ErrorCenter()
     var codexStatus: ProviderStatus { get { quotaViewModel.codexStatus } set { quotaViewModel.codexStatus = newValue } }
     var claudeStatus: ProviderStatus { get { quotaViewModel.claudeStatus } set { quotaViewModel.claudeStatus = newValue } }
@@ -101,6 +102,12 @@ private actor WidgetSnapshotPublisher {
     func openSettings() {
         NSApp.activate()
         if let settingsAction { settingsAction() } else { pendingSettings = true }
+    }
+    func checkForUpdates() {
+        guard !isShuttingDown else { return }
+        settingsViewModel.selectedTab = .about
+        openSettings()
+        updateViewModel.check()
     }
     var menuQuotaSelections: [MenuQuotaSelection] {
         get { settingsViewModel.menuQuotaSelections }
@@ -748,6 +755,7 @@ private actor WidgetSnapshotPublisher {
     }
     func shutdown() async {
         isShuttingDown = true
+        updateViewModel.stop()
         exportPanel?.cancel(nil); exportPanel = nil
         backupModel?.prepareForShutdown()
         let pending = [startupTask, refreshTask, importTask, resetTask, quotaEventsTask, analyticsTask,
@@ -759,6 +767,7 @@ private actor WidgetSnapshotPublisher {
         statusBar?.close(); statusBar = nil
         await analyticsViewModel.shutdown()
         await authenticationViewModel.shutdown()
+        await updateViewModel.shutdown()
         await refreshService.stop()
         await backupModel?.shutdown()
         for task in pending + writes { await task.value }

@@ -10,7 +10,7 @@ Codex account/quota reads are made through the official local Codex App Server, 
 
 The optional Claude status-line helper receives the documented JSON over stdin, discards the source document and saves only numeric rate limits with a hashed account binding. The widget gets a separate, size-limited App Group JSON snapshot containing provider, plan label, remaining percentages, reset dates and update dates. It does not read credentials, sessions or the SwiftData store. CSV and JSON exports use an explicit statistics allowlist; absolute project paths are replaced with per-export opaque labels by default.
 
-The app has no remote update, crash-reporting or analytics network integration. User-facing error states use fixed labels; raw provider responses and session bodies are never written to logs.
+The app has no crash-reporting or analytics network integration. A manual update check requests the public GitHub Releases API for this repository without authentication, cookies, URL credentials or a persistent response cache. It sends no usage, project, session or account data and does not run automatically. Only validated repository release/DMG links are opened in the default browser; the app does not download, execute or install update code. User-facing error states use fixed labels; raw provider responses and session bodies are never written to logs.
 
 Opt-in quota alerts use the local macOS UserNotifications framework. They include provider, window label, remaining percentage and reset countdown only; no credential, prompt or project path is placed in a notification.
 

@@ -17,11 +17,21 @@ struct DashboardGroup<Content: View>: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.065), lineWidth: 1))
     }
 }
+struct PageHeading: View {
+    let title: String
+    let subtitle: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+            Text(subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 struct PageFrame<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
-        ScrollView { content.frame(maxWidth: 1400, alignment: .leading).frame(maxWidth: .infinity).padding(16) }
+        ScrollView { content.frame(maxWidth: 1120, alignment: .leading).frame(maxWidth: .infinity).padding(16) }
             .background(Color(nsColor: .windowBackgroundColor))
     }
 }
@@ -48,19 +58,28 @@ struct Metric: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
                 if let color { Circle().fill(color).frame(width: 6, height: 6) }
-                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(title)
             }
             TokenNumber(value: value, compact: true).font(.title2.weight(.semibold))
         }.frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
     }
 }
 struct StatusBadge: View {
     let health: ConnectionHealth
     var body: some View {
         HStack(spacing: 5) {
-            Circle().fill(health == .connected ? Color.green : health == .syncing ? Color.blue : Color.orange).frame(width: 6, height: 6)
+            Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
             Text(health.localizedLabel).font(.caption).foregroundStyle(.secondary)
         }.accessibilityElement(children: .combine)
+    }
+    private var color: Color {
+        switch health {
+        case .connected: .green
+        case .syncing: .accentColor
+        case .notInstalled, .signedOut: .secondary
+        default: .orange
+        }
     }
 }
 struct AnalyticsFilters: View {
@@ -71,19 +90,22 @@ struct AnalyticsFilters: View {
                 periodPicker.pickerStyle(.segmented)
                 providerPicker.frame(maxWidth: 150)
             }
-            HStack { periodPicker; providerPicker }
+            HStack {
+                periodPicker.pickerStyle(.menu)
+                providerPicker.pickerStyle(.menu)
+            }
         }.controlSize(.small)
     }
     private var periodPicker: some View {
         Picker("统计范围", selection: $model.query.period) {
             ForEach(UsagePeriod.allCases) { Text($0.title).tag($0) }
-        }.labelsHidden()
+        }.labelsHidden().accessibilityLabel("统计范围")
     }
     private var providerPicker: some View {
         Picker("来源", selection: $model.query.provider) {
             Text("全部来源").tag(Optional<ProviderID>.none)
             ForEach(ProviderID.allCases, id: \.self) { Text($0.title).tag(Optional($0)) }
-        }.labelsHidden()
+        }.labelsHidden().accessibilityLabel("统计来源")
     }
 }
 struct TrendChart: View {
@@ -97,15 +119,19 @@ struct TrendChart: View {
         return points.min { abs($0.date.timeIntervalSince(selected)) < abs($1.date.timeIntervalSince(selected)) }
     }
     var body: some View {
+        let nearest = self.nearest
+        let values = points.map(\.tokens)
         VStack(alignment: .leading, spacing: 4) {
-            Chart(points) { point in
-                AreaMark(x: .value("时间", point.date), y: .value("Token", point.tokens))
-                    .foregroundStyle(Color.blue.opacity(0.08)).interpolationMethod(.linear)
-                LineMark(x: .value("时间", point.date), y: .value("Token", point.tokens))
-                    .foregroundStyle(Color.blue).lineStyle(StrokeStyle(lineWidth: 1.8)).interpolationMethod(.linear)
-                if let nearest, nearest.id == point.id {
-                    RuleMark(x: .value("时间", point.date)).foregroundStyle(Color.secondary.opacity(0.3))
-                    PointMark(x: .value("时间", point.date), y: .value("Token", point.tokens)).foregroundStyle(.blue)
+            Chart {
+                ForEach(points) { point in
+                    AreaMark(x: .value("时间", point.date), y: .value("Token", point.tokens))
+                        .foregroundStyle(Color.accentColor.opacity(0.08)).interpolationMethod(.linear)
+                    LineMark(x: .value("时间", point.date), y: .value("Token", point.tokens))
+                        .foregroundStyle(Color.accentColor).lineStyle(StrokeStyle(lineWidth: 1.8)).interpolationMethod(.linear)
+                }
+                if let nearest {
+                    RuleMark(x: .value("时间", nearest.date)).foregroundStyle(Color.secondary.opacity(0.3))
+                    PointMark(x: .value("时间", nearest.date), y: .value("Token", nearest.tokens)).foregroundStyle(Color.accentColor)
                 }
             }
             .chartXSelection(value: $selected)
@@ -117,15 +143,15 @@ struct TrendChart: View {
                     else { AxisValueLabel(format: .dateTime.month().day()) }
                 }
             }
-            .chartYScale(domain: 0...max(1, points.map(\.tokens).max() ?? 0))
+            .chartYScale(domain: 0...max(1, values.max() ?? 0))
             .frame(height: height)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: points.map(\.tokens))
-            if let nearest {
-                HStack {
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: values)
+            HStack {
+                if let nearest {
                     Text(nearest.date, format: hourly ? .dateTime.hour().minute() : .dateTime.month().day())
                     TokenNumber(value: nearest.tokens); Text("Token")
-                }.font(.caption).foregroundStyle(.secondary)
-            }
+                } else { Text(points.isEmpty ? "暂无趋势数据" : "选择图表查看对应时间用量") }
+            }.font(.caption).foregroundStyle(.secondary).frame(minHeight: 18, alignment: .leading)
         }.accessibilityLabel("Token 时间趋势")
     }
 }

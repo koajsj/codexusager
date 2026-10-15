@@ -33,7 +33,7 @@ private actor WidgetSnapshotPublisher {
     let quotaViewModel = QuotaViewModel()
     let analyticsViewModel = AnalyticsViewModel()
     let refreshViewModel = RefreshViewModel()
-    let settingsViewModel = SettingsViewModel()
+    var settingsViewModel = SettingsViewModel()
     let updateViewModel = UpdateViewModel()
     let errorCenter = ErrorCenter()
     var codexStatus: ProviderStatus { get { quotaViewModel.codexStatus } set { quotaViewModel.codexStatus = newValue } }

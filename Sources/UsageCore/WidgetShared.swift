@@ -5,7 +5,7 @@ public enum QuotaFreshness {
 }
 
 /// Shared verbatim by the app and extension. No identity, path, credential, or session content.
-public struct WidgetQuota: Codable, Sendable, Identifiable {
+public struct WidgetQuota: Codable, Sendable, Identifiable, Equatable {
     public var id: String
     public var durationMinutes: Int?
     public var remaining: Double
@@ -15,7 +15,7 @@ public struct WidgetQuota: Codable, Sendable, Identifiable {
         self.id = id; self.durationMinutes = durationMinutes; self.remaining = remaining; self.reset = reset; self.updatedAt = updatedAt
     }
 }
-public struct WidgetProviderSnapshot: Codable, Sendable, Identifiable {
+public struct WidgetProviderSnapshot: Codable, Sendable, Identifiable, Equatable {
     public var id: String
     public var plan: String?
     public var state: String

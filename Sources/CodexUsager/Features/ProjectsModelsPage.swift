@@ -21,6 +21,12 @@ struct ProjectsPage: View {
                                 Text(project.name).font(.headline).lineLimit(1)
                                 Text("\(project.providers.map(\.title).joined(separator: " / ")) · \(project.sessionCount) 个会话")
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                if !project.commonModels.isEmpty {
+                                    Text("常用模型：" + project.commonModels.joined(separator: "、")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                if let duration = project.reportedDuration {
+                                    Text("已报告耗时：\(duration.formatted()) 秒（来源样本）").font(.caption2).foregroundStyle(.secondary)
+                                }
                                 if width >= 660 { Text(project.lastSeen, format: .dateTime.month().day().hour().minute()).font(.caption2).foregroundStyle(.tertiary) }
                             }
                             Spacer(minLength: 6)
@@ -62,7 +68,7 @@ struct ModelsPage: View {
                             Image(systemName: "cube").foregroundStyle(.secondary)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.name == "unknown" ? "未知模型" : item.name).font(.headline).lineLimit(2)
-                                Text("\(item.provider.title) · \(item.sessionCount) 个会话 · \(item.projectCount) 个项目").font(.caption).foregroundStyle(.secondary)
+                                Text("\(item.provider.title) · \(item.callCount) 次用量事件 · \(item.sessionCount) 个会话 · \(item.projectCount) 个项目").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if width > 650 { Sparkline(points: item.trend) }
@@ -71,6 +77,10 @@ struct ModelsPage: View {
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 22) { breakdown(item) }
                             VStack(alignment: .leading, spacing: 8) { breakdown(item) }
+                        }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 16) { averages(item) }
+                            VStack(alignment: .leading, spacing: 6) { averages(item) }
                         }
                         HStack {
                             if let cost = item.estimatedCost {
@@ -87,6 +97,14 @@ struct ModelsPage: View {
                 }
             }
         }.padding(14)
+    }
+    @ViewBuilder private func averages(_ item: ModelSummary) -> some View {
+        Text("Token 占比：" + (item.tokenShare.map { $0.formatted(.percent.precision(.fractionLength(1))) } ?? "—"))
+            .font(.caption).foregroundStyle(.secondary)
+        Text("平均 Token：" + (item.averageTokens.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "—"))
+            .font(.caption).foregroundStyle(.secondary)
+        Text("平均耗时：" + (item.averageDuration.map { "\($0.formatted(.number.precision(.fractionLength(1)))) 秒 · \(item.durationSampleCount) 条来源样本" } ?? "来源未提供"))
+            .font(.caption).foregroundStyle(.secondary)
     }
     @ViewBuilder private func breakdown(_ item: ModelSummary) -> some View {
         ForEach([TokenMetric.input, .cacheRead, .cacheWrite, .output]) { metric in

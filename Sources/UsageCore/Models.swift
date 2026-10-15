@@ -143,6 +143,10 @@ public struct UsageRecord: Codable, Identifiable, Sendable {
     /// nil is a legacy record whose field availability was not recorded.
     public var availableMetrics: [TokenMetric]? = nil
     public var supersedesID: String? = nil
+    /// Metadata only. Nil means the source did not report it; never infer completion from token output.
+    public var durationSeconds: Double? = nil
+    public var status: UsageEventStatus? = nil
+    public var contextWindowTokens: Int64? = nil
 }
 
 public struct ImportCursor: Codable, Sendable {

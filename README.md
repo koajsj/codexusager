@@ -1,11 +1,11 @@
 # CodexUsager
 
-CodexUsager 是原生 macOS AI Coding 用量伴侣。Codex App Server 提供账户、套餐与真实额度；Claude Code 的官方 status-line 字段可通过本地桥接提供额度。本机 JSONL 提供 Codex / Claude 的 Token、会话、项目和模型统计。
+CodexUsager 是macOS Tahoe 原生 AI Coding Analytics Dashboard。Codex App Server 提供账户、套餐与真实额度；Claude Code 的官方 status-line 字段可通过本地桥接提供额度。本机 JSONL 提供 Codex / Claude 的 Token、会话、项目和模型统计。
 
-- macOS Sequoia **15.0+**；支持 Apple Silicon，发布构建可生成 Universal 2（arm64 + x86_64）。
+- 当前源码目标为 macOS Tahoe **26.0+**；支持 Apple Silicon，发布构建可生成 Universal 2（arm64 + x86_64）。
 - SwiftUI + AppKit 菜单栏 + SwiftData + Swift Charts；无 Electron、Tauri、第三方 UI 框架或自建服务。
 - 简体中文为默认语言，界面使用系统色与 SF Symbols。
-- 当前工程版本为 **1.0.1**（Preview：`v1.0.1-preview`）；签名、安装和业务运行行为需按发布清单验证。
+- 当前工程版本为 **1.0.1**。本轮源码升级尚未发布；现有 Preview 安装包的系统要求与功能以对应 Tag 为准。签名、安装和业务运行行为需按发布清单验证。
 
 ## 安装与构建
 
@@ -34,12 +34,22 @@ Scripts/package_app.sh release --universal --unsigned
 - 人工数据：修正值独立保存为 `UsageAdjustment`；手动补录明确标记。CSV / JSON 导出使用统计字段白名单，默认匿名化绝对项目路径。
 - 备份与恢复：设置的「数据」页可导出本地 JSON 备份，包含应用偏好、项目映射、人工修正、手动记录、90 天内额度历史和自定义模型单价，并记录格式版本、应用版本与创建时间。恢复先校验并预览，确认后合并；当前同 ID 记录优先保留，应用偏好须单独选择恢复。原始会话、当前额度、账户和登录状态不包含在备份中。
 - 刷新策略：默认智能，额度每 15 分钟检查，剩余低于 20% 时每 5 分钟；Session 每 30 分钟增量扫描。也可选择手动、15 分钟、30 分钟或 1 小时。启动、手动刷新和登录变化立即更新；自动模式回到前台时更新额度。手动模式停止定时和前台自动请求。
-- 数据来源中心分别展示成功同步、额度更新和本地扫描时间；概览小总结来自统计数据，首页另列出当前统计范围内最近 5 个会话及累计 Token。
+- 数据来源中心分别展示成功同步、额度更新和本地扫描时间；概览小总结来自统计数据，首页列出最近 5 条用量事件，单条 Token 与会话累计值分别展示。
 - 存储：标准化统计、账户摘要、额度快照、游标、来源健康和人工记录保存在 `~/Library/Application Support/CodexUsager/usage.store`。Widget 只读取 App Group 中经过筛选的额度快照。
 
 浏览器授权由官方 Codex 托管回调。App 收到匹配的成功事件并再次确认账户后，打开短时本机状态页，提供返回应用或重试入口；不修改官方回调，不接收授权代码，不保存网页状态。若此前 Codex 凭据只在 `auth.json` 中，需在 App 中重新登录 Keychain；App 不读取、迁移或删除该文件。登出会影响同一 CODEX_HOME 的官方 Codex Keychain 登录，需用户确认。
 
 环境变量 `CODEX_HOME` 和 `CLAUDE_CONFIG_DIR` 会改变本地会话根目录；Codex App Server 同时遵循 `CODEX_HOME`。如果命令行工具未被识别，请确保它位于用户 `PATH`、`~/.local/bin`、Homebrew 路径或 NVM Node bin 路径。
+
+## Analytics 与数据边界
+
+- 活动中心：分页读取真实用量事件，展示 Provider、模型、Session、项目及各 Token 字段；大窗口显示更多列，小窗口通过详情查看。每页 100 条，单次浏览最多 10,000 条，可缩小筛选范围。调用次数是去重后的用量事件数，不等同于网络请求数；手动记录不计入调用次数。
+- 模型分析：Token 占比、平均单条消耗、会话和项目统计。缺少 Total 时不将已知小计当成完整总量；超大数饱和时不显示精确占比。
+- 成本：沿用模型页可编辑的本地 USD 单价，展示今日、本自然月、项目排行。全部标为模拟估算，非真实账单；价格或必要 Token 字段缺失时明确显示覆盖条数。
+- 时间与项目：日、周、月趋势、本地时区小时分布、常用模型、高消耗事件及 Session。用量趋势不是效率或质量评分，小时分布不是工作时长。
+- Codex 活动事件：仅展示当前 App Server 连接实际收到的 Turn / Usage 元数据，保存在内存中，与历史统计分离；不自动 resume 用户线程，不认为能监听其他 App Server 进程。
+- Context：仅保留来源明确报告的上下文容量。累计 Token、输入 Token、会话跨度不能推导实时占用或上下文膨胀，暂不提供相关提醒。
+- 耗时与状态：现有 JSONL 用量事件通常没有准确调用耗时或完成状态，显示来源未提供。不会用工具执行耗时、日志间隔、助手回复或 Prompt 推断任务耗时和名称。
 
 ## 隐私
 

@@ -82,6 +82,12 @@
 			"path" = "Sources/CodexUsager/CodexUsagerApp.swift";
 			"sourceTree" = "<group>";
 		};
+		F88E9FEAAE745027DEDCC544 = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "Sources/CodexUsager/Features/ActivityCenterPage.swift";
+			"sourceTree" = "<group>";
+		};
 		CDC05E9F7042E44E9C969312 = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -267,6 +273,7 @@
 				902575D1CE513FAF8CB10E65,
 				4A3E211453A2D688CB8F6220,
 				B381D1CF8BBA94EE599D9E4E,
+				F88E9FEAAE745027DEDCC544,
 				CDC05E9F7042E44E9C969312,
 				1A7B9543121698B6376394BD,
 				88DD7EB336FB7E4D06417F53,
@@ -346,6 +353,10 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = B381D1CF8BBA94EE599D9E4E;
 		};
+		F7A61A0CD3F86257E83A6D07 = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = F88E9FEAAE745027DEDCC544;
+		};
 		7718931512F462B5B8B0C50F = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = CDC05E9F7042E44E9C969312;
@@ -419,6 +430,7 @@
 				260995A3B3180880CF7D58CB,
 				B05B8A641F9FA92EF6DA44F5,
 				6074D96D7397C92607175A26,
+				F7A61A0CD3F86257E83A6D07,
 				7718931512F462B5B8B0C50F,
 				365830347F6C7C09E215451A,
 				F169BB98D702496454DE4F85,
@@ -569,7 +581,7 @@
 		3CF6A4F2E05B3AAE7E2CBFEE = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -590,7 +602,7 @@
 		23FB2CAEB38545C3793097DD = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -620,7 +632,7 @@
 		F4B7E5BA8E58CF01A465BB80 = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -642,7 +654,7 @@
 		4EB605AD2E4EE7316ACCD6DD = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -673,7 +685,7 @@
 		E3BE4D16D9CC35F0EB84CF75 = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -692,7 +704,7 @@
 		2E0E92B7EA3814021ECDBBF8 = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
 				"MARKETING_VERSION" = "1.0.1";
@@ -721,7 +733,7 @@
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
 				"SDKROOT" = "macosx";
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_VERSION" = "6.0";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
@@ -732,7 +744,7 @@
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
 				"SDKROOT" = "macosx";
-				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+				"MACOSX_DEPLOYMENT_TARGET" = "26.0";
 				"CLANG_ENABLE_MODULES" = "YES";
 				"SWIFT_VERSION" = "6.0";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
@@ -832,7 +844,7 @@
 			"isa" = "PBXProject";
 			"attributes" = {
 				"BuildIndependentTargetsInParallel" = "YES";
-				"LastUpgradeCheck" = "1530";
+				"LastUpgradeCheck" = "2600";
 				"TargetAttributes" = {
 					29C7B681C8D62CBAC94D51C0 = {
 						"ProvisioningStyle" = "Automatic";

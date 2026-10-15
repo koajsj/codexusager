@@ -56,6 +56,8 @@ public struct ProviderRead: Sendable {
 }
 
 public enum ProviderEvent: Sendable {
+    case activity(CodexActivity)
+    case activityIssue(AppError)
     case quota(QuotaSnapshot)
     case accountChanged
     case disconnected

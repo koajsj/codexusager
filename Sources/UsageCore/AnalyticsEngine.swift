@@ -23,6 +23,20 @@ struct AnalyticsEngine {
     private var providerTokens: [ProviderID: Int64] = [:]
     private var providerSessions: [ProviderID: Set<String>] = [:]
     private var availableModels: Set<String> = []
+    private var modelMeanTokens: [String: Double] = [:]
+    private var modelKnownCalls: [String: Int] = [:]
+    private var modelDurations: [String: (total: Double, count: Int)] = [:]
+    private var projectDurations: [String: Double] = [:]
+    private var projectModelTokens: [String: [String: Int64]] = [:]
+    private var projectCosts: [String: CostEstimate] = [:]
+    private var hourDistribution: [Int: Int64] = [:]
+    private var incompleteProjects: Set<String> = []
+    private var incompleteModels: Set<String> = []
+    private var incompleteSessions: Set<String> = []
+    private var incompleteProviders: Set<ProviderID> = []
+    private var incompleteTotal = false
+    private var incompleteToday = false
+    private var incompleteTodayProviders: Set<ProviderID> = []
     private var todayProjects: [String: (name: String, tokens: Int64)] = [:]
     private var todayModels: [String: (provider: ProviderID, name: String, tokens: Int64)] = [:]
 
@@ -52,7 +66,9 @@ struct AnalyticsEngine {
         return UsageEntry(id: record.id, provider: record.provider, timestamp: record.timestamp,
             sessionID: record.sessionID, project: p.key, projectName: p.name, model: record.model,
             original: record.tokens, final: record.tokens.applying(adjustment?.replacement ?? TokenValues(), provider: record.provider),
-            adjustment: adjustment, isManual: false, note: adjustment?.note ?? "")
+            adjustment: adjustment, isManual: false, note: adjustment?.note ?? "",
+            durationSeconds: record.durationSeconds.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+            status: record.status, contextWindowTokens: record.contextWindowTokens)
     }
     private func matchingAdjustment(_ record: UsageRecord) -> UsageAdjustment? {
         guard let value = adjustments[record.id], value.original == record.tokens,
@@ -86,10 +102,19 @@ struct AnalyticsEngine {
         let total = entry.final.total ?? 0
         let day = calendar.startOfDay(for: entry.timestamp)
         let sessionKey = "\(entry.provider.rawValue):\(entry.sessionID)"
+        let priceKey = "\(entry.provider.rawValue):\(entry.model ?? "unknown")"
+        let cost = prices[priceKey]?.estimate(entry.final)
         if !p.ignored, entry.timestamp <= now {
+            Self.keep(entry, in: &result.homeRecentCalls, limit: 5) { Self.newer($0, $1) }
+            if day == calendar.startOfDay(for: now) { result.todayCost.consume(cost) }
+            if let start = calendar.dateInterval(of: .month, for: now)?.start, entry.timestamp >= start {
+                result.monthCost.consume(cost)
+            }
             result.home.lastActivity = max(result.home.lastActivity ?? entry.timestamp, entry.timestamp)
             if day == calendar.startOfDay(for: now) {
                 result.today.accumulate(entry.final)
+                incompleteToday = incompleteToday || entry.final.total == nil
+                if entry.final.total == nil { incompleteTodayProviders.insert(entry.provider) }
                 result.todayByProvider[entry.provider] = SafeCount.add(result.todayByProvider[entry.provider] ?? 0, total)
                 if let knownTotal = entry.final.total, knownTotal > 0 {
                     if p.key != "unknown" {
@@ -106,6 +131,30 @@ struct AnalyticsEngine {
             }
         }
         guard includes(entry), !p.ignored else { return }
+        Self.keep(entry, in: &result.recentCalls, limit: 100) { Self.newer($0, $1) }
+        if entry.final.total != nil {
+            Self.keep(entry, in: &result.largestCalls, limit: 5) {
+                $0.final.total == $1.final.total ? Self.newer($0, $1) : ($0.final.total ?? 0) > ($1.final.total ?? 0)
+            }
+        }
+        if let duration = entry.durationSeconds, !entry.isManual {
+            Self.keep(entry, in: &result.longestCalls, limit: 5) {
+                $0.durationSeconds == $1.durationSeconds ? Self.newer($0, $1) : ($0.durationSeconds ?? 0) > ($1.durationSeconds ?? 0)
+            }
+            let next = (projectDurations[p.key] ?? 0) + duration
+            if next.isFinite { projectDurations[p.key] = next }
+        }
+        if let name = entry.model {
+            projectModelTokens[p.key, default: [:]][name] = SafeCount.add(projectModelTokens[p.key]?[name] ?? 0, total)
+        }
+        projectCosts[p.key, default: CostEstimate()].consume(cost)
+        hourDistribution[calendar.component(.hour, from: entry.timestamp)] = SafeCount.add(hourDistribution[calendar.component(.hour, from: entry.timestamp)] ?? 0, total)
+        if entry.final.total == nil {
+            result.unavailableTotalCount = SafeCount.add(result.unavailableTotalCount, 1)
+            incompleteTotal = true; incompleteProjects.insert(p.key)
+            incompleteModels.insert(priceKey); incompleteSessions.insert(sessionKey)
+            incompleteProviders.insert(entry.provider)
+        }
         var project = projectRows[p.key] ?? ProjectSummary(id: p.key, name: p.name, paths: [], providers: [], tokens: TokenValues(), sessionCount: 0, lastSeen: entry.timestamp, trend: [], ignored: p.ignored)
         if let originalPath, !project.paths.contains(originalPath) { project.paths.append(originalPath) }
         if !project.providers.contains(entry.provider) { project.providers.append(entry.provider) }
@@ -145,7 +194,21 @@ struct AnalyticsEngine {
         sessions[sessionKey] = session
         let modelName = entry.model ?? "unknown", modelKey = "\(entry.provider.rawValue):\(modelName)"
         var model = modelRows[modelKey] ?? ModelSummary(name: modelName, provider: entry.provider, tokens: TokenValues(), sessionCount: 0, projectCount: 0, trend: [], estimatedCost: nil)
-        model.tokens.accumulate(entry.final); modelRows[modelKey] = model
+        model.tokens.accumulate(entry.final)
+        if !entry.isManual {
+            model.callCount = SafeCount.add(model.callCount, 1)
+            if let value = entry.final.total {
+                let count = SafeCount.add(modelKnownCalls[modelKey] ?? 0, 1)
+                let mean = modelMeanTokens[modelKey] ?? 0
+                modelMeanTokens[modelKey] = mean + (Double(value) - mean) / Double(count)
+                modelKnownCalls[modelKey] = count
+            }
+            if let value = entry.durationSeconds {
+                let old = modelDurations[modelKey] ?? (0, 0), next = old.total + value
+                if next.isFinite { modelDurations[modelKey] = (next, SafeCount.add(old.count, 1)) }
+            }
+        }
+        modelRows[modelKey] = model
         if let price = prices[modelKey], let cost = price.estimate(entry.final) {
             let next = (modelCosts[modelKey] ?? 0) + cost
             if next.isFinite { modelCosts[modelKey] = next }
@@ -165,15 +228,40 @@ struct AnalyticsEngine {
         }).first?.value {
             result.home.mainModel = model.name; result.home.modelProvider = model.provider
         }
-        result.sessions = sessions.values.sorted { $0.lastSeen > $1.lastSeen }
+        if incompleteTotal { result.tokens.total = nil }
+        if incompleteToday { result.today.total = nil }
+        for provider in incompleteTodayProviders { result.todayByProvider.removeValue(forKey: provider) }
+        result.sessions = sessions.values.map { row in
+            var row = row
+            if incompleteSessions.contains(row.id) { row.tokens.total = nil }
+            return row
+        }.sorted { $0.lastSeen == $1.lastSeen ? $0.id < $1.id : $0.lastSeen > $1.lastSeen }
         result.projects = projectRows.values.map { row in
             var row = row; row.sessionCount = projectSessions[row.id]?.count ?? 0
-            row.trend = points(projectDays[row.id] ?? [:]); return row
+            row.trend = points(projectDays[row.id] ?? [:])
+            row.commonModels = Array((projectModelTokens[row.id] ?? [:]).sorted {
+                $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value
+            }.prefix(3).map(\.key))
+            row.reportedDuration = projectDurations[row.id]
+            if let estimate = projectCosts[row.id], estimate.isComplete { row.estimatedCost = estimate.amount }
+            if incompleteProjects.contains(row.id) { row.tokens.total = nil }
+            return row
         }.sorted { ($0.tokens.total ?? 0) > ($1.tokens.total ?? 0) }
         result.models = modelRows.values.map { row in
             var row = row; row.sessionCount = modelSessions[row.id]?.count ?? 0; row.projectCount = modelProjects[row.id]?.count ?? 0
             row.trend = points(modelDays[row.id] ?? [:])
             row.estimatedCost = unpricedModels.contains(row.id) ? nil : modelCosts[row.id]
+            if incompleteModels.contains(row.id) { row.tokens.total = nil }
+            if row.callCount > 0, modelKnownCalls[row.id] == row.callCount {
+                row.averageTokens = modelMeanTokens[row.id]
+            }
+            if let duration = modelDurations[row.id], duration.count > 0 {
+                row.averageDuration = duration.total / Double(duration.count)
+                row.durationSampleCount = duration.count
+            }
+            if let total = result.tokens.total, total > 0, total < Int64.max, let count = row.tokens.total {
+                row.tokenShare = min(1, max(0, Double(count) / Double(total)))
+            }
             return row
         }.sorted { ($0.tokens.total ?? 0) > ($1.tokens.total ?? 0) }
         if query.from == nil, query.through == nil, let start = query.period.start(now: now, calendar: calendar) {
@@ -191,11 +279,38 @@ struct AnalyticsEngine {
         result.past24Hours = (-23...0).compactMap { calendar.date(byAdding: .hour, value: $0, to: hourStart) }.map { TrendPoint(date: $0, tokens: hours[$0] ?? 0) }
         result.providers = ProviderID.allCases.compactMap { provider in
             guard let sessions = providerSessions[provider] else { return nil }
-            return ProviderTotal(id: provider, tokens: providerTokens[provider] ?? 0, sessions: sessions.count)
+            return ProviderTotal(id: provider, tokens: incompleteProviders.contains(provider) ? nil : providerTokens[provider] ?? 0,
+                                 sessions: sessions.count)
         }
+        result.weeklyTrend = groupedTrend(days, component: .weekOfYear)
+        result.monthlyTrend = groupedTrend(days, component: .month)
+        result.hourlyDistribution = (0..<24).map { HourUsage(hour: $0, tokens: hourDistribution[$0] ?? 0) }
         result.availableModels = availableModels.sorted()
         result.generatedAt = now
         return result
+    }
+    private static func newer(_ a: UsageEntry, _ b: UsageEntry) -> Bool {
+        a.timestamp == b.timestamp ? a.id < b.id : a.timestamp > b.timestamp
+    }
+    private static func keep(_ entry: UsageEntry, in values: inout [UsageEntry], limit: Int,
+                      ordered: (UsageEntry, UsageEntry) -> Bool) {
+        var low = 0, high = values.count
+        while low < high {
+            let middle = low + (high - low) / 2
+            if ordered(entry, values[middle]) { high = middle } else { low = middle + 1 }
+        }
+        guard low < limit else { return }
+        values.insert(entry, at: low)
+        if values.count > limit { values.removeLast() }
+    }
+    private func groupedTrend(_ values: [Date: Int64], component: Calendar.Component) -> [TrendPoint] {
+        var grouped: [Date: Int64] = [:]
+        for (date, count) in values {
+            if let start = calendar.dateInterval(of: component, for: date)?.start {
+                grouped[start] = SafeCount.add(grouped[start] ?? 0, count)
+            }
+        }
+        return points(grouped)
     }
     private func points(_ values: [Date: Int64]) -> [TrendPoint] {
         values.keys.sorted().map { TrendPoint(date: $0, tokens: values[$0] ?? 0) }

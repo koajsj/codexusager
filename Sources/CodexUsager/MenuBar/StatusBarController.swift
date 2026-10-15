@@ -16,7 +16,7 @@ private final class ClickThroughHostingView<Content: View>: NSHostingView<Conten
         self.model = model
         super.init()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 310, height: 300)
+        popover.contentSize = NSSize(width: 310, height: 370)
         popover.contentViewController = NSHostingController(rootView: MenuPopover(model: model))
         if let button = item.button { button.target = self; button.action = #selector(togglePopover) }
         update()
@@ -181,6 +181,10 @@ private struct MenuPopover: View {
                     Text(count, format: .number).monospacedDigit()
                 } else { Text("—") }
             }.font(.subheadline)
+            if let latest = model.analytics.homeRecentCalls.first(where: { $0.provider == model.selectedProvider }) {
+                LabeledContent("最近模型", value: latest.model ?? "未提供").font(.caption)
+                LabeledContent("最近 Session", value: latest.sessionID).font(.caption).lineLimit(1).truncationMode(.middle)
+            }
             HStack(spacing: 6) {
                 Circle().fill(model.selectedQuota.isStale ? Color.orange : Color.green).frame(width: 6, height: 6)
                 Text(model.selectedQuota.isStale ? "数据可能已过期" : model.selectedStatus.health.localizedLabel)

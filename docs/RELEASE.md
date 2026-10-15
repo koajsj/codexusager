@@ -5,7 +5,7 @@
 ## 发布入口
 
 - 唯一发布入口：`CodexUsager.xcodeproj` → `CodexUsager` Application Target → `CodexUsager` 共享 Scheme。App 产品类型为 `com.apple.product-type.application`，产物为 `CodexUsager.app`。
-- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.1（构建号 3）、macOS 15.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
+- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.1（构建号 3）、macOS 26.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
 - `UsageCore` 静态链接到 App 与 Bridge，不要求额外的动态 Frameworks 目录。App 图标和字符串资源由 Xcode 构建，不手工生成 Info.plist。
 - SwiftPM App executableTarget 只用于开发，不得把 `.build` 下的 Unix 可执行文件当作发布 App。
 - 发布前检查 `main` 工作区、提交与版本，确认 `origin` 指向 `https://github.com/koajsj/codexusager.git`。先审查未提交修改，避免发布遗漏。
@@ -33,7 +33,7 @@ Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.1-preview.dmg
 
 ## 运行门槛
 
-- 在 macOS 15.0、Light/Dark、紧凑/常规/扩大窗口中检查布局、菜单栏、Widget Small/Medium、倒计时、Reduce Motion 和 VoiceOver。
+- 在 macOS Tahoe 26、Light/Dark、紧凑/常规/扩大窗口中检查布局、菜单栏、Widget Small/Medium、倒计时、Reduce Motion 和 VoiceOver。
 - 检查由用户提供的 App 图标在 Dock、Finder 和不同分辨率下的缩放效果；菜单栏继续检查单色 Template Icon。
 - 检查干净安装、已有 V1 数据迁移、App Group 快照读写、离线/未登录/过期状态，以及真实 Codex / Claude 来源格式。
 - 从最终 DMG 在另一台 Mac 安装并启动，确认卸载和升级路径。保留导出与隐私检查记录。
@@ -48,7 +48,7 @@ Apple 的 [公证说明](https://developer.apple.com/documentation/security/nota
 
 Actions 兼容数字版本 tag 与 `-preview` 后缀，并将后者标记为 prerelease。只有推送 tag 才触发发布。已有 v1.0.0 tag/Release 保留，不移动或覆盖。
 
-登录、取消、登出、Keychain 权限、原文件登录重新连接、官方回调与附加浏览器反馈页需要真实来源验证。macOS 15 Sequoia 和 macOS 26 Tahoe 的布局、前后台刷新策略、菜单栏与 Widget 需分别运行验证。构建或合成 RPC 测试不代表这些流程已完成验收。
+登录、取消、登出、Keychain 权限、原文件登录重新连接、官方回调与附加浏览器反馈页需要真实来源验证。macOS 26 Tahoe 的布局、前后台刷新策略、菜单栏与 Widget 需分别运行验证。构建或合成 RPC 测试不代表这些流程已完成验收。
 
 ## 发布门禁
 

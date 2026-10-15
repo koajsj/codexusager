@@ -119,12 +119,15 @@ extension UsageRepository {
                     correction: value.replacement, finalValues: final))
             }
         case .manual:
-            for value in manual where engine.includes(engine.entry(value)) { try write(row(engine.entry(value))) }
+            for value in manual where !engine.project(value.project).ignored {
+                let entry = engine.entry(value)
+                if engine.includes(entry) { try write(row(entry)) }
+            }
         }
         if format == .json { try handle.write(contentsOf: Data("\n]\n".utf8)) }
         try handle.synchronize(); try handle.close()
         if FileManager.default.fileExists(atPath: destination.path) {
-            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary, options: [.usingNewMetadataOnly])
         } else { try FileManager.default.moveItem(at: temporary, to: destination) }
     }
 }

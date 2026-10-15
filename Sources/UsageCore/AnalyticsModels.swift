@@ -94,7 +94,7 @@ extension UsageRecord {
         }
         return TokenValues(input: value(.input, inputTokens), cacheRead: value(.cacheRead, cachedInputTokens),
                            cacheWrite: value(.cacheWrite, cacheWriteTokens), output: value(.output, outputTokens),
-                           reasoning: value(.reasoning, reasoningTokens), total: totalTokens)
+                           reasoning: value(.reasoning, reasoningTokens), total: value(.total, totalTokens))
     }
 }
 
@@ -116,7 +116,7 @@ public enum UsagePeriod: String, Codable, CaseIterable, Sendable, Identifiable {
 /// A single calendar snapshot is shared by filtering, grouping and chart buckets.
 public struct AnalyticsTimeContext: Sendable {
     public let calendar: Calendar
-    public init(timeZone: TimeZone = .autoupdatingCurrent) {
+    public init(timeZone: TimeZone = .current) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         self.calendar = calendar
@@ -222,6 +222,9 @@ public struct UsageEntry: Sendable, Identifiable {
     public var adjustment: UsageAdjustment?
     public var isManual: Bool
     public var note: String
+    public var durationSeconds: Double? = nil
+    public var status: UsageEventStatus? = nil
+    public var contextWindowTokens: Int64? = nil
 }
 
 public struct TrendPoint: Sendable, Identifiable {
@@ -230,9 +233,16 @@ public struct TrendPoint: Sendable, Identifiable {
     public var tokens: Int64
 }
 
+public struct HourUsage: Sendable, Identifiable {
+    public var id: Int { hour }
+    public var hour: Int
+    public var tokens: Int64
+}
+
 public struct ProviderTotal: Sendable, Identifiable {
     public var id: ProviderID
-    public var tokens: Int64
+    /// Nil when any included record lacks a complete total; never label a subtotal as consumption.
+    public var tokens: Int64?
     public var sessions: Int
 }
 
@@ -246,6 +256,9 @@ public struct ProjectSummary: Sendable, Identifiable {
     public var lastSeen: Date
     public var trend: [TrendPoint]
     public var ignored: Bool
+    public var commonModels: [String] = []
+    public var reportedDuration: Double? = nil
+    public var estimatedCost: Double? = nil
 }
 
 public struct ModelSummary: Sendable, Identifiable {
@@ -257,6 +270,12 @@ public struct ModelSummary: Sendable, Identifiable {
     public var projectCount: Int
     public var trend: [TrendPoint]
     public var estimatedCost: Double?
+    /// Normalized usage events, not HTTP requests or tool invocations.
+    public var callCount: Int = 0
+    public var averageTokens: Double? = nil
+    public var tokenShare: Double? = nil
+    public var averageDuration: Double? = nil
+    public var durationSampleCount: Int = 0
 }
 
 public struct HomeSummary: Sendable {
@@ -270,6 +289,7 @@ public struct HomeSummary: Sendable {
 public struct AnalyticsSnapshot: Sendable {
     public var tokens = TokenValues()
     public var recordCount = 0
+    public var unavailableTotalCount = 0
     public var manualCount = 0
     public var adjustedCount = 0
     public var sessions: [SessionSummary] = []
@@ -289,6 +309,15 @@ public struct AnalyticsSnapshot: Sendable {
     public var manual: [ManualUsage] = []
     public var rules: [ProjectRule] = []
     public var prices: [ModelPrice] = []
+    public var homeRecentCalls: [UsageEntry] = []
+    public var recentCalls: [UsageEntry] = []
+    public var largestCalls: [UsageEntry] = []
+    public var longestCalls: [UsageEntry] = []
+    public var hourlyDistribution: [HourUsage] = []
+    public var weeklyTrend: [TrendPoint] = []
+    public var monthlyTrend: [TrendPoint] = []
+    public var todayCost = CostEstimate()
+    public var monthCost = CostEstimate()
     public var generatedAt: Date = .now
     public init() {}
 }

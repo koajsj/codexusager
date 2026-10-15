@@ -124,7 +124,7 @@ embed_bridge = phase("app:bridge", "PBXCopyFilesBuildPhase",
                      name="Embed Claude Bridge")
 
 common = {
-    "MACOSX_DEPLOYMENT_TARGET": "15.0",
+    "MACOSX_DEPLOYMENT_TARGET": "26.0",
     "SWIFT_VERSION": "6.0",
     "SWIFT_STRICT_CONCURRENCY": "complete",
     "MARKETING_VERSION": "1.0.1",
@@ -152,7 +152,7 @@ bridge_settings = {
     "PRODUCT_NAME": "ClaudeQuotaBridge", "GENERATE_INFOPLIST_FILE": "YES",
     "SKIP_INSTALL": "YES",
 }
-project_settings = {"SDKROOT": "macosx", "MACOSX_DEPLOYMENT_TARGET": "15.0",
+project_settings = {"SDKROOT": "macosx", "MACOSX_DEPLOYMENT_TARGET": "26.0",
                     "CLANG_ENABLE_MODULES": "YES", "SWIFT_VERSION": "6.0"}
 
 app_configs = config_list("app",
@@ -196,7 +196,7 @@ bridge_target = obj("target:bridge", "PBXNativeTarget", buildConfigurationList=b
                     packageProductDependencies=[core_product], productName="ClaudeQuotaBridge",
                     productReference=bridge_product, productType="com.apple.product-type.tool")
 project = obj("project", "PBXProject", attributes={"BuildIndependentTargetsInParallel": "YES",
-              "LastUpgradeCheck": "1530", "TargetAttributes": {
+              "LastUpgradeCheck": "2600", "TargetAttributes": {
                   app_target: {"ProvisioningStyle": "Automatic"},
                   widget_target: {"ProvisioningStyle": "Automatic"},
                   bridge_target: {"ProvisioningStyle": "Automatic"}}},

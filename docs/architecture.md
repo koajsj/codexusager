@@ -51,3 +51,14 @@ AppModel 保留 composition root 与高级刷新协调。RefreshViewModel 拥有
 fallback ID 使用长度前缀的规范化语义字段和 SHA256。JSONL 在解码时传入 turn_context model，解码器 revision 3 使旧游标安全重索引；原始 source 文件保持只读。匹配旧原始值的 UsageAdjustment 重绑新 ID，不能明确匹配或目标已有修正时保留原修正，不覆盖。SwiftData schema 保持 V3，未修改持久模型关系或删除 migration。
 
 ProcessRunner 每次调用创建一个隔离 actor，拥有子进程、输出流、deadline 与取消清理；stdout 和退出状态分开观察，输出大小和队列有上限，TERM 后仍存活的同一进程最多等待一秒后 KILL。
+
+
+## Tahoe Analytics 扩展
+
+继续使用 `StoredUsage.payload` 中的 `UsageRecord` 与 `UsageRepository`，SwiftData V1 → V2 → V3 迁移链未变，不建立第二份 AIUsageEvent 存储。可选 `durationSeconds` / `status` / `contextWindowTokens` 缺失时 Codable 保持旧记录可读。现有来源只导入明确的 context 容量；没有从正文推断耗时、状态或任务名称。
+
+解析修订号 4 使旧文件按现有来源贡献机制重索引；源文件只读，稳定 ID、修正记录和来源关系继续保留。手动 Usage 进入 Token / 成本统计，但不进入调用平均值。所有列表只展示元数据。
+
+`AnalyticsEngine` 复用同一时区快照生成模型、项目和时间分析；Top 列表保持有界。活动中心由 View → AppModel / AnalyticsViewModel → UsageRepository 查询每页 100 条，使用一致词法排序；SwiftData 批次最多 256 条。价格仍使用 StoredModelPrice，备份格式不变。
+
+官方 `turn/started`、`turn/completed`、`thread/tokenUsage/updated` 事件只进入内存中的最多 20 条 CodexActivity，未持久化或加到历史总量。独立 stdio 连接不保证观察别的进程，未调用 thread/resume，不接收任务正文。官方协议参考：https://developers.openai.com/codex/app-server/ 。

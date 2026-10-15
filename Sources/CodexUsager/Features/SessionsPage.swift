@@ -57,7 +57,7 @@ struct SessionsPage: View {
                     if width > 570 {
                         TableColumn("输出") { TokenNumber(value: $0.tokens.output, compact: true).font(.caption) }.width(65)
                     }
-                    TableColumn("总计") { TokenNumber(value: $0.totalTokens, compact: true).font(.caption.weight(.medium)) }.width(75)
+                    TableColumn("总计") { TokenNumber(value: $0.tokens.total, compact: true).font(.caption.weight(.medium)) }.width(75)
                 }
                 .contextMenu(forSelectionType: String.self) { ids in
                     Button("查看统计详情") { if let id = ids.first { showDetail(id) } }.disabled(ids.isEmpty)

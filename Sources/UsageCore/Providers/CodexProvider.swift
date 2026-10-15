@@ -145,6 +145,15 @@ public actor CodexProvider: UsageProvider {
                     debugDetail: "quota_notification: \(type(of: error))",
                     recoverySuggestion: "更新 Codex CLI 后手动刷新额度。")))
             }
+        case "turn/started", "turn/completed", "thread/tokenUsage/updated":
+            do {
+                if let value = try CodexActivityDecoder.decode(method: notification.method, data: notification.parameters) {
+                    continuation.yield(.activity(value))
+                }
+            } catch {
+                continuation.yield(.activityIssue(AppError("Codex 活动事件格式无法解析。", debugDetail: "activity_notification",
+                    recoverySuggestion: "更新 Codex CLI 后刷新；历史统计继续来自本地索引。")))
+            }
         case "account/updated": continuation.yield(.accountChanged)
         case "connection/closed": continuation.yield(.disconnected)
         default: break

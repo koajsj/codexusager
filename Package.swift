@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "CodexUsager",
     defaultLocalization: "zh-Hans",
-    platforms: [.macOS("15.0")],
+    platforms: [.macOS("26.0")],
     products: [.library(name: "UsageCore", targets: ["UsageCore"])],
     targets: [
         .target(name: "UsageCore", path: "Sources/UsageCore"),

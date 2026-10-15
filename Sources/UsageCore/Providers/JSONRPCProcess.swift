@@ -34,12 +34,16 @@ public actor JSONRPCProcess {
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let stdin = Pipe(), stdout = Pipe()
         process.standardInput = stdin; process.standardOutput = stdout; process.standardError = FileHandle.nullDevice
-        let stream = AsyncStream<Data>.makeStream()
+        let stream = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingOldest(64))
         try process.run()
+        try stdout.fileHandleForWriting.close()
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty { handle.readabilityHandler = nil; stream.continuation.finish() }
-            else { stream.continuation.yield(data) }
+            else if case .dropped = stream.continuation.yield(data) {
+                // Do not silently discard RPC responses. Close the connection and fail pending reads.
+                handle.readabilityHandler = nil; stream.continuation.finish()
+            }
         }
         self.process = process; input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading
         buffer.removeAll(); generation = UUID()
@@ -96,6 +100,8 @@ public actor JSONRPCProcess {
             } else if let method = object["method"] as? String {
                 // This read-only client never accepts server requests to execute tools or supply credentials.
                 if let requestID = object["id"] { try? send(["id": requestID, "error": ["code": -32601, "message": "Read-only client"]]); continue }
+                // Ignore prompt/reply/tool/file event streams at the transport boundary.
+                guard method.hasPrefix("account/") || ["turn/started", "turn/completed", "thread/tokenUsage/updated"].contains(method) else { continue }
                 if let parameters = object["params"], let data = try? JSONSerialization.data(withJSONObject: parameters) {
                     notificationContinuation.yield(RPCNotification(method: method, parameters: data))
                 }

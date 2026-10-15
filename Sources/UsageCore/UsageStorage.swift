@@ -294,7 +294,7 @@ public struct SourceCenterSummary: Sendable {
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
         var healthRow = try modelContext.fetch(FetchDescriptor<StoredHealth>(predicate: #Predicate { $0.path == path })).first
         let previousHealth = try healthRow.map { try JSONDecoder().decode(SourceHealth.self, from: $0.payload) }
-        if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 3,
+        if previousHealth?.error == nil, let cursor, cursor.decoderRevision == 4,
            cursor.offset == cursor.fileSize,
            (attrs[.size] as? NSNumber)?.uint64Value == cursor.fileSize,
            attrs[.modificationDate] as? Date == cursor.modifiedAt,
@@ -306,7 +306,7 @@ public struct SourceCenterSummary: Sendable {
             try Task.checkCancellation()
             do {
                 if result.rebuilt {
-                    if cursor?.decoderRevision != 3 { try rebindFallbackAdjustments(path: path) }
+                    if cursor?.decoderRevision != 4 { try rebindFallbackAdjustments(path: path) }
                     try removeSource(path); changed = true
                 }
                 var batch: [String: UsageRecord] = [:]
@@ -333,7 +333,7 @@ public struct SourceCenterSummary: Sendable {
                 let health = SourceHealth(provider: provider, sourceFile: path,
                     malformedLines: SafeCount.add(reset ? 0 : old?.malformedLines ?? 0, result.malformedLines),
                     importedRecords: SafeCount.add(reset ? 0 : old?.importedRecords ?? 0, result.records.count),
-                    lastScan: .now, error: result.unsupportedRecords > 0 ? "unsupported_format" : nil,
+                    lastScan: .now, error: SafeCount.add(reset ? 0 : old?.unsupportedRecords ?? 0, result.unsupportedRecords) > 0 ? "unsupported_format" : nil,
                     deduplicatedRecords: SafeCount.add(reset ? 0 : old?.deduplicatedRecords ?? 0, duplicates),
                     unsupportedRecords: SafeCount.add(reset ? 0 : old?.unsupportedRecords ?? 0, result.unsupportedRecords))
                 let healthData = try JSONEncoder().encode(health)

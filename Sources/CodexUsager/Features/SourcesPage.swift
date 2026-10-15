@@ -41,7 +41,7 @@ struct SourcesPage: View {
                                 Text(model.storageError == nil ? "尚无索引统计" : "本地索引统计不可用")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
-                            LabeledContent("最近扫描", value: (model.sourceRefresh[id]?.scannedAt ?? model.sourceSummaries[id]?.lastScan)
+                            LabeledContent("最近成功扫描", value: model.sourceRefresh[id]?.scannedAt
                                 .map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "尚未扫描")
                             if let error = model.sourceRefresh[id]?.scanError {
                                 Label(error, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)

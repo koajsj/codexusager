@@ -17,9 +17,13 @@ enum MenuValue: String, CaseIterable { case remaining, used }
 
 /// Serializes snapshot writes so a cancelled older publish cannot overwrite newer quota data.
 private actor WidgetSnapshotPublisher {
-    func write(_ snapshot: WidgetSnapshot) throws {
+    private var lastProviders: [WidgetProviderSnapshot]?
+    func write(_ snapshot: WidgetSnapshot) throws -> Bool {
         try Task.checkCancellation()
+        guard snapshot.providers != lastProviders else { return false }
         try WidgetSnapshotStore.write(snapshot)
+        lastProviders = snapshot.providers
+        return true
     }
 }
 
@@ -281,6 +285,7 @@ private actor WidgetSnapshotPublisher {
         var state = quota(nextStatus.id)
         let shouldClear = changed || nextStatus.authentication == .signedOut || nextStatus.authentication == .apiKey || nextStatus.health == .notInstalled
         if shouldClear {
+            if nextStatus.id == .codex { analyticsViewModel.liveActivities = [] }
             state = QuotaState()
             quotaHistory[nextStatus.id] = []
             pace = pace.filter { !$0.key.hasPrefix(nextStatus.id.rawValue + ":") }
@@ -323,6 +328,12 @@ private actor WidgetSnapshotPublisher {
             for await event in refreshService.codexEvents {
                 guard !Task.isCancelled else { break }
                 switch event {
+                case .activityIssue(let issue):
+                    analyticsViewModel.activityError = issue.userMessage
+                case .activity(let value):
+                    guard codexStatus.authentication == .chatGPT else { continue }
+                    analyticsViewModel.applyActivity(value)
+                    statusBar?.update()
                 case .quota(var sparse):
                     guard codexStatus.authentication == .chatGPT, let current = codexQuota.snapshot else { continue }
                     if let incoming = sparse.accountID, let existing = current.accountID, incoming != existing {
@@ -356,6 +367,7 @@ private actor WidgetSnapshotPublisher {
         }
     }
     private func invalidateAccount() async {
+        analyticsViewModel.liveActivities = []
         accountGeneration += 1; codexQuota = QuotaState(); codexStatus = ProviderStatus(id: .codex)
         quotaHistory[.codex] = []
         pace = pace.filter { !$0.key.hasPrefix("codex:") }
@@ -410,7 +422,6 @@ private actor WidgetSnapshotPublisher {
                 do {
                     let result = try await refreshService.scan(provider, repository: repository)
                     changed = result.changed || changed
-                    lastImport = result.completedAt
                 } catch is CancellationError { break }
                 catch {
                     errorCenter.report(AppError("本地会话扫描失败。", debugDetail: "scan: \(type(of: error))",
@@ -433,6 +444,7 @@ private actor WidgetSnapshotPublisher {
         analyticsTask?.cancel()
         analyticsTask = Task {
             isAggregating = true
+            defer { if generation == analyticsGeneration { isAggregating = false } }
             do {
                 try await Task.sleep(for: .milliseconds(180))
                 let value = try await repository.analytics(query: filter, now: now, timeContext: timeContext)
@@ -449,7 +461,6 @@ private actor WidgetSnapshotPublisher {
                     persistenceFailed()
                 }
             }
-            if generation == analyticsGeneration { isAggregating = false }
         }
     }
     private func reloadSourceSummaries() {
@@ -490,7 +501,8 @@ private actor WidgetSnapshotPublisher {
             do {
                 let entries = try await repository.sessionEntries(session)
                 if generation == detailGeneration, !Task.isCancelled { sessionEntries = entries }
-            } catch {
+            } catch is CancellationError { }
+            catch {
                 if generation == detailGeneration {
                     let message = "会话详情读取失败，请刷新后重试。"
                     operationError = message
@@ -499,6 +511,12 @@ private actor WidgetSnapshotPublisher {
                 }
             }
             if generation == detailGeneration { isLoadingSession = false }
+        }
+    }
+    func loadActivity(reset: Bool = true) {
+        guard let repository else { return }
+        analyticsViewModel.loadActivity(reset: reset) { [query] offset in
+            try await repository.activity(query: query, offset: offset)
         }
     }
     func saveAdjustment(_ value: UsageAdjustment) { mutate { try await $0.saveAdjustment(value) } }
@@ -614,10 +632,11 @@ private actor WidgetSnapshotPublisher {
         widgetTask = Task {
             do {
                 try await Task.sleep(for: .seconds(1))
-                try await widgetPublisher.write(snapshot)
+                let changed = try await widgetPublisher.write(snapshot)
+                // A completed write needs a reload even if this publication was superseded just afterwards.
+                if changed { WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.kind) }
                 try Task.checkCancellation()
                 widgetError = nil; errorCenter.clear(.widget)
-                WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.kind)
             } catch is CancellationError { }
             catch {
                 let message = "Widget 共享容器不可用，请使用配置相同开发团队与 App Group 的 Xcode 工程。"
@@ -652,6 +671,7 @@ private actor WidgetSnapshotPublisher {
     }
     func shutdown() {
         refreshTask?.cancel(); importTask?.cancel(); refreshViewModel.stopPolling(); resetTask?.cancel()
+        analyticsViewModel.shutdown()
         quotaEventsTask?.cancel(); analyticsTask?.cancel(); detailTask?.cancel(); widgetTask?.cancel()
         sourceSummaryTask?.cancel()
         restoredHistoryTask?.cancel()

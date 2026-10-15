@@ -3,11 +3,12 @@ import SwiftUI
 import UsageCore
 
 private enum MainPage: String, CaseIterable, Identifiable {
-    case overview, usage, sessions, projects, models, sources
+    case overview, activity, usage, sessions, projects, models, sources
     var id: String { rawValue }
     var title: String {
         switch self {
         case .overview: String(localized: "概览")
+        case .activity: String(localized: "活动中心")
         case .usage: String(localized: "用量")
         case .sessions: String(localized: "会话")
         case .projects: String(localized: "项目")
@@ -18,6 +19,7 @@ private enum MainPage: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: "square.grid.2x2"
+        case .activity: "waveform.path.ecg"
         case .usage: "chart.bar.xaxis"
         case .sessions: "clock.arrow.circlepath"
         case .projects: "folder"
@@ -156,6 +158,7 @@ struct MainWindow: View {
         case .overview:
             OverviewPage(model: model, width: width, compact: windowWidth < 675,
                          showSources: { selection = .sources }, showProjects: { selection = .projects })
+        case .activity: ActivityCenterPage(model: model, width: width)
         case .usage:
             UsagePage(model: model, width: width, openRecords: { recordsSheet = true })
                 .toolbar {

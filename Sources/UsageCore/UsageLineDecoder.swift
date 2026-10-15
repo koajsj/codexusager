@@ -65,10 +65,13 @@ public enum UsageLineDecoder {
         guard !usage.isEmpty else { return nil }
         let total = provider == .codex
             ? (parsedCount("total_tokens") ?? SafeCount.add(input, output))
-            : SafeCount.sum([input, cached, cacheWrite, output])
+            : (parsedCount("total_tokens") ?? SafeCount.sum([input, cached, cacheWrite, output]))
         let fieldKeys: [(TokenMetric, String)] = [(.input, "input_tokens"), (.cacheRead, provider == .codex ? "cached_input_tokens" : "cache_read_input_tokens"), (.cacheWrite, provider == .codex ? "cache_write_input_tokens" : "cache_creation_input_tokens"), (.output, "output_tokens"), (.reasoning, "reasoning_output_tokens")]
         guard fieldKeys.contains(where: { usage[$0.1] is NSNumber }) || usage["total_tokens"] is NSNumber else { return nil }
-        let available = fieldKeys.compactMap { usage[$0.1] is NSNumber ? $0.0 : nil } + [.total]
+        // Missing output/cache fields must not silently become a complete total.
+        // Legacy Claude files omit zero cache fields; only derive a total when both input/output exist.
+        let hasTotal = parsedCount("total_tokens") != nil || (parsedCount("input_tokens") != nil && parsedCount("output_tokens") != nil)
+        let available = fieldKeys.compactMap { usage[$0.1] is NSNumber ? $0.0 : nil } + (hasTotal ? [.total] : [])
         let dateText = root["timestamp"] as? String ?? ""
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -82,6 +85,11 @@ public enum UsageLineDecoder {
                            inputTokens: input, cachedInputTokens: cached, cacheWriteTokens: cacheWrite,
                            outputTokens: output, reasoningTokens: reasoning, totalTokens: total,
                            sourceFile: sourceFile, importedAt: .now, eventType: eventType, availableMetrics: available)
+        if provider == .codex, let info = payload["info"] as? [String: Any],
+           let number = info["model_context_window"] as? NSNumber,
+           CFGetTypeID(number) != CFBooleanGetTypeID(), let count = Int64(number.stringValue), count > 0 {
+            record.contextWindowTokens = count
+        }
         record.fingerprint = fallbackFingerprint(record)
         if sourceID == nil { record.id = record.fingerprint }
         return record

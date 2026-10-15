@@ -6,6 +6,10 @@ public struct SourceRefreshMetadata: Codable, Sendable {
     public var scanError: String?
     public var updatedAt: Date?
     public init() {}
+    mutating func recordScan(at date: Date, error: String?) {
+        if error == nil { scannedAt = date }
+        scanError = error
+    }
 }
 
 /// Stores scan/sync metadata separately from normalized usage and provider credentials.
@@ -26,7 +30,7 @@ private actor SourceRefreshRepository {
         save(value, provider: provider)
     }
     func scanned(_ provider: ProviderID, at date: Date, error: String?) {
-        var value = read(provider); value.scannedAt = date; value.scanError = error
+        var value = read(provider); value.recordScan(at: date, error: error)
         save(value, provider: provider)
     }
     func scanFailed(_ provider: ProviderID) {
@@ -79,19 +83,20 @@ public actor DataRefreshService {
         let roots = provider == .codex ? await codex.sourceRoots() : await claude.sourceRoots()
         let (files, directoryFailure) = try sourceFiles(in: roots)
         var changed = false
+        var fileFailure = false
         for file in files {
             try Task.checkCancellation()
             do { changed = try await repository.importFile(file, provider: provider) || changed }
             catch is CancellationError { throw CancellationError() }
             catch {
-                changed = true
+                changed = true; fileFailure = true
                 try await repository.recordFailure(path: file.path, provider: provider)
             }
         }
         try Task.checkCancellation()
         let date = Date()
         await refreshRepository.scanned(provider, at: date,
-            error: directoryFailure ? "部分会话目录无法读取。请检查目录权限后重新扫描。" : nil)
+            error: directoryFailure || fileFailure ? "部分会话目录或文件无法读取。请检查目录权限后重新扫描。" : nil)
         return LocalScanResult(changed: changed, completedAt: date)
     }
     // Consume Foundation's directory enumerator synchronously before awaiting repository imports.
@@ -112,7 +117,11 @@ public actor DataRefreshService {
             }
             for case let file as URL in iterator {
                 try Task.checkCancellation()
-                if file.pathExtension == "jsonl" { paths.insert(file) }
+                if file.pathExtension == "jsonl" {
+                    do {
+                        if try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true { paths.insert(file) }
+                    } catch { directoryFailure = true }
+                }
             }
         }
         return (paths.sorted(by: { $0.path < $1.path }), directoryFailure)

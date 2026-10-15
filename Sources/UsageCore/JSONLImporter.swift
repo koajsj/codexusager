@@ -30,7 +30,7 @@ public enum JSONLImporter {
         let prefix = try handle.read(upToCount: digestLength) ?? Data()
         let digest = SHA256.hash(data: prefix).map { String(format: "%02x", $0) }.joined()
         let rebuilt = cursor.map {
-            $0.decoderRevision != 3 || $0.fileIdentity != identity || size < $0.fileSize ||
+            $0.decoderRevision != 4 || $0.fileIdentity != identity || size < $0.fileSize ||
             (size == $0.fileSize && modified != $0.modifiedAt) ||
             ($0.prefixDigest != nil && digest != $0.prefixDigest)
         } ?? false
@@ -120,7 +120,7 @@ public enum JSONLImporter {
                                                offset: completeOffset, preferredRecordEvents: sawRecord,
                                                sessionID: session, project: project, model: model,
                                                discardingOversizedLine: discarding, prefixDigest: digest,
-                                               prefixLength: digestLength, pendingUsage: pendingUsage, decoderRevision: 3),
+                                               prefixLength: digestLength, pendingUsage: pendingUsage, decoderRevision: 4),
                           malformedLines: malformed, peakBufferBytes: peak, rebuilt: rebuilt, reachedEnd: reachedEnd,
                           unsupportedRecords: unsupported)
     }

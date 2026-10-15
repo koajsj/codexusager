@@ -103,7 +103,7 @@ struct SettingsView: View {
             Form {
                 LabeledContent("应用", value: "CodexUsager")
                 LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "未知")
-                LabeledContent("系统要求", value: "macOS 15.0 或更新版本")
+                LabeledContent("系统要求", value: "macOS Tahoe 26 或更新版本")
                 Text("原生 macOS AI Coding 用量伴侣，支持 Codex 和 Claude Code。")
                     .foregroundStyle(.secondary)
             }

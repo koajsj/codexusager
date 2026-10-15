@@ -34,6 +34,8 @@ struct OverviewPage: View {
                         .font(.caption2).foregroundStyle(.secondary)
                     Divider()
                     HomeSummaryView(model: model)
+                    Divider()
+                    CostSummaryView(analytics: model.analytics)
                 }
                 DashboardGroup("过去 24 小时") {
                     if model.hasIndexed, model.analytics.today.total != nil || model.analytics.past24Hours.contains(where: { $0.tokens > 0 }) {
@@ -45,6 +47,16 @@ struct OverviewPage: View {
                         }
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 150)
+                    }
+                }
+                DashboardGroup("模型排行 · 当前筛选范围") {
+                    if model.analytics.models.isEmpty { Text("暂无模型数据").foregroundStyle(.secondary) }
+                    ForEach(Array(model.analytics.models.prefix(3))) { item in
+                        HStack {
+                            Text(item.name == "unknown" ? "未知模型" : item.name).lineLimit(1)
+                            Spacer()
+                            TokenNumber(value: item.tokens.total, compact: true).font(.caption)
+                        }
                     }
                 }
                 DashboardGroup {
@@ -87,25 +99,25 @@ struct OverviewPage: View {
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("最近使用").font(.headline)
-                let sessions = Array(model.analytics.sessions.prefix(5))
-                if sessions.isEmpty {
-                    Text(model.isImporting ? "正在索引本地会话…" : "暂无会话记录")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(sessions) { session in
+                Text("最近调用").font(.headline)
+                ForEach(model.analytics.homeRecentCalls) { entry in
                     HStack(spacing: 10) {
-                        Text(session.lastSeen, format: .dateTime.month().day().hour().minute())
-                            .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                        Text("\(session.provider.title) · \(session.projectName)")
-                            .lineLimit(1).truncationMode(.middle)
+                        Text(entry.timestamp, format: .dateTime.month().day().hour().minute())
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(entry.provider.title) · \(entry.projectName)").lineLimit(1)
+                            Text(entry.isManual ? "手动记录" : entry.model ?? "模型未提供")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         Spacer(minLength: 4)
-                        TokenNumber(value: session.tokens.total, compact: true).font(.caption).monospacedDigit()
+                        TokenNumber(value: entry.final.total, compact: true).font(.caption.monospacedDigit())
                     }
-                    if session.id != sessions.last?.id { Divider() }
+                    if entry.id != model.analytics.homeRecentCalls.last?.id { Divider() }
                 }
-                Text("当前统计范围内最近 5 个会话；Token 为会话累计值。")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                if model.analytics.homeRecentCalls.isEmpty {
+                    Text(model.isImporting ? "正在索引本地会话…" : "暂无调用记录").font(.caption).foregroundStyle(.secondary)
+                }
+                Text("最近 5 条用量事件，Token 为单条记录；会话累计值见会话页。").font(.caption2).foregroundStyle(.tertiary)
             }.padding(.vertical, 4)
             QuotaInsights(model: model)
             }

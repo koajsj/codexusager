@@ -5,7 +5,7 @@ CodexUsager 是 macOS Tahoe 原生 AI Coding Analytics Dashboard。Codex App Ser
 - 当前源码目标为 macOS Tahoe **26.0+**；支持 Apple Silicon，发布构建可生成 Universal 2（arm64 + x86_64）。
 - SwiftUI + AppKit 菜单栏 + SwiftData + Swift Charts；无 Electron、Tauri、第三方 UI 框架或自建服务。
 - 简体中文为默认语言，界面使用系统色与 SF Symbols。
-- 当前工程版本为 **1.0.2**，对应 `v1.0.2-preview` 发布准备。安装包的系统要求与功能以对应 Tag 为准；签名、安装和业务运行行为需按发布清单验证。
+- 当前工程版本为 **1.0.3**，对应 `v1.0.3-preview` 发布准备。安装包的系统要求与功能以对应 Tag 为准；签名、安装和业务运行行为需按发布清单验证。
 
 ## 使用入口
 

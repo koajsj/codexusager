@@ -1,5 +1,11 @@
 # 变更记录
 
+## 1.0.3-preview — 发布准备
+
+- 修复设置页 TabView 嵌套绑定的编译错误：将 AppModel.settingsViewModel 改为可写属性，保留现有初始化和业务逻辑。
+- App / Widget / Bridge 版本统一为 1.0.3（构建号 5），使用新 Tag 触发 GitHub 自动构建 DMG、SHA-256 和 Preview Release，不移动旧 Tag。
+- 本机仅做静态检查，编译及测试结果以 GitHub Actions 为准。
+
 ## 1.0.2-preview — 发布准备
 
 - 应用菜单与「设置 → 关于」新增手动检查更新，按数字版本及 Preview / 正式渠道比较，显示说明并打开本仓库 DMG 下载。仅请求 GitHub 公开发布信息，不自动安装。

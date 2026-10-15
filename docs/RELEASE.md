@@ -1,11 +1,11 @@
-# CodexUsager 1.0.2 发布准备
+# CodexUsager 1.0.3 发布准备
 
 本文件描述未签名预览与后续签名发布流程。仓库已配置 tag 自动构建、DMG 与 SHA-256 上传；签名、公证和安装验证是独立门槛。
 
 ## 发布入口
 
 - 唯一发布入口：`CodexUsager.xcodeproj` → `CodexUsager` Application Target → `CodexUsager` 共享 Scheme。App 产品类型为 `com.apple.product-type.application`，产物为 `CodexUsager.app`。
-- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.2（构建号 4）、macOS 26.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
+- App、Widget 与 ClaudeQuotaBridge 均配置为 1.0.3（构建号 5）、macOS 26.0+。Widget 和 Bridge 由 App Target 依赖及嵌入。
 - `UsageCore` 静态链接到 App 与 Bridge，不要求额外的动态 Frameworks 目录。App 图标和字符串资源由 Xcode 构建，不手工生成 Info.plist。
 - SwiftPM App executableTarget 只用于开发，不得把 `.build` 下的 Unix 可执行文件当作发布 App。
 - 发布前检查 `main` 工作区、提交与版本，确认 `origin` 指向 `https://github.com/koajsj/codexusager.git`。先审查未提交修改，避免发布遗漏。
@@ -14,7 +14,7 @@
 
 ```sh
 Scripts/package_app.sh release --universal --unsigned
-Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.2-preview.dmg --unsigned
+Scripts/prepare_dmg.sh build/CodexUsager.app dist/CodexUsager-v1.0.3-preview.dmg --unsigned
 ```
 
 先创建输出目录 `dist`。两个脚本均拒绝覆盖已有产物。App 使用 Xcode Release 配置，保留 Widget、App Group 配置及 Hardened Runtime 设置；`--unsigned` 只在本次构建关闭代码签名，不修改工程能力。DMG 包含完整 App 与 Applications 入口，生成同名 `.sha256` 文件。
@@ -44,7 +44,7 @@ Apple 的 [公证说明](https://developer.apple.com/documentation/security/nota
 
 ## 本轮 Preview
 
-产物命名为 `CodexUsager-v1.0.2-preview.dmg` 与同名 `.sha256`；Bundle 的 Marketing Version 保持数字 `1.0.2`，构建号为 `4`。使用已推送的最新 main 和新的 DerivedData 生成；新 tag `v1.0.2-preview` 通过 Actions 发布独立的未签名预览版，已有 tag/Release 不移动、不覆盖。
+产物命名为 `CodexUsager-v1.0.3-preview.dmg` 与同名 `.sha256`；Bundle 的 Marketing Version 保持数字 `1.0.3`，构建号为 `5`。使用已推送的最新 main 和新的 DerivedData 生成；新 tag `v1.0.3-preview` 通过 Actions 发布独立的未签名预览版，已有 tag/Release 不移动、不覆盖。
 
 Actions 监听版本 tag，仅允许当前未签名流程发布 `-preview` 并标记为 prerelease。正式 tag 不能借此发布未签名正式版。只有推送 tag 才触发发布；main / PR 的检查流程不打包或发布。已有 v1.0.0 tag/Release 保留，不移动或覆盖。
 
@@ -75,7 +75,7 @@ Actions 的 `verify` job 先执行 `swift test`（仅合成数据，不访问真
 
 历史 v1.0.0 / v1.0.0-preview 发布草稿已收敛到本文件、CHANGELOG 与 PRIVACY；旧包的系统要求与功能以原 Tag 为准。安装步骤仍为下载 DMG、校验 SHA-256、将 App 拖入 Applications；当前源码要求 Tahoe 26+。
 
-## 1.0.2-preview 更新入口与前端验收
+## 1.0.3-preview 更新入口与前端验收
 
 - 应用菜单「检查更新…」应打开设置的关于页；初次不自动联网。Preview 默认包含预览版，可临时切换正式渠道。
 - 检查正常发布、未发布附件、GitHub 限流、网络离线、取消退出和无法打开浏览器。更新检查本机未运行，合成测试由 Tag CI 执行；不能据静态检查声称通过。
@@ -83,4 +83,4 @@ Actions 的 `verify` job 先执行 `swift test`（仅合成数据，不访问真
 - Preview 发布将 `USAGE_RELEASE_CHANNEL=preview` 写入主 App Info.plist；未来正式签名发布须改为 `stable`，避免同版本 Preview 与正式版比较错误。
 - 设置窗口可缩放；确认六个页签、展开更新说明及中文长错误在小窗口可读，表单可滚动。额度页检查 460pt 内容宽度前后的双列 / 单列；过期值及等待更新不得表现成实时额度。
 - 对 Light / Dark、Reduce Motion、VoiceOver 与实际顶部状态栏检查字号、截断、图表选中详情和最近调用行。上述 UI 仅做源码审查，需后续运行验证。
-- 发布仅推送 main 和新的 v1.0.2-preview Tag；不移动旧 Tag、不覆盖旧 Release，本机不生成 DMG，触发后不等待或查询 Actions / Release 结果。
+- 发布仅推送 main 和新的 v1.0.3-preview Tag；不移动旧 Tag、不覆盖旧 Release，本机不生成 DMG，触发后不等待或查询 Actions / Release 结果。
